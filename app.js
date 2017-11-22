@@ -1,6 +1,7 @@
 /*
 TODOS:
-- Deploy to heroku
+- FIX cors issue and deploy to bogoin.herokuapp.com
+- TEST on http://nether.space/reporter.html to see if we can post
 - TEST on 상태.com to see if cors is really working
 - Add logic to block requests using the wrong keys (Make sure we put a timer on this)
 - Add cors to the route, and only allow from nether space for now
