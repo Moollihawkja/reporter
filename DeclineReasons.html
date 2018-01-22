@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>Decisioning Analysis</title>
+	<style>
+		* {
+			font-family: Arial;
+		}
+
+		body {
+			background-color: #232323;
+			color: #EFEFEF;
+		}
+
+		label, input, button {
+			display:block;
+			margin:0.5em;
+		}
+
+		button {
+			font-size:1.15em;
+		}
+
+	</style>
+ 	<script src="http://nether.space/plotly.js"></script>
+	<script src="http://nether.space/libs/restfull.js"></script>
+</head>
+
+<body>
+	<h1>Decisioning Analysis</h1>
+	<div>
+		<h2>Choose the date range</h2>
+		<div id='dateRange'>
+			<label>Start Date:</label>
+			<input type='text' id='start'/>
+			<label>End Date:</label>
+			<input type='text' id='end'/>
+			<button id='run'>Run</button>
+		</div>
+		<script type="text/javascript">
+			var	endDate = new Date(),
+				startDate = new Date()
+			;
+			startDate.setDate(startDate.getDate() - 30);
+			document.querySelector('#start').value = startDate.toLocaleDateString();
+			document.querySelector('#end').value = endDate.toLocaleDateString();
+			document.querySelector('#run').addEventListener('click', function() {
+				var endDate = new Date(document.querySelector('#end').value)
+					, startDate = new Date(document.querySelector('#start').value)
+				;
+				
+				function round(n, decimalPlaces) {
+					var dp = Math.pow(10,decimalPlaces || 0);
+					return Math.round(n * dp) / dp;
+				}
+				function dailyInterestFee(amountFinanced, apr, numberOfDays, daysInAYear) {
+					daysInAYear = daysInAYear || 360;
+					return round(amountFinanced * apr * numberOfDays / daysInAYear , 2);
+				}
+				function calcPayment(ratePerPeriod, term, amountfinanced, firstPaymentDayOffset, daysInAYear) {
+					var numberOfDays = (firstPaymentDayOffset || 30) - 30;
+					var additionalInterest = dailyInterestFee(amountfinanced, ratePerPeriod * 12, numberOfDays, daysInAYear || 360);
+
+					amountfinanced += additionalInterest;
+					return ratePerPeriod === 0
+							? -amountfinanced / term
+							: -amountfinanced*Math.pow(1+ratePerPeriod,term)*ratePerPeriod/(Math.pow(1+ratePerPeriod,term)-1);
+				}
+				var path = 'http://localhost:3272/query' // 'http://bogoin.herokuapp.com/query'; 
+					,
+					query = {
+						loanApplications: {
+							aggregate: [{
+								$match: {
+									'status.pricing': { $nin: ['NOTSUBMITTED', 'NONE', 'NOT SUBMITTED'] },
+									dateCreated: { $gte: startDate.toISOString(), $lt: endDate.toISOString() },
+									'applicant.email': { $nin: ['prodtest-1@autofi.io','prodtest-1@autofi.com'] },
+									backendPath: { $nin: ['SIMULATOR', 'LENDERTEST'] },
+									'applicant.isTestUser': { $not: { $eq: true } },
+									'trackingLabel.isTest': { $not: { $eq: true } },
+									'trackingLabel.isDuplicate': { $not: { $eq: true } },
+									'trackingLabel.isFake': { $not: { $eq: true } },
+								}
+							}, {
+								$project: {
+									pricingStatus: '$status.pricing',
+									pricingMessage: '$status.pricingMessage',
+									dealerTrack: { $arrayElemAt: ['$riskData.dealerTrack', -1] },
+									routeOne: { $arrayElemAt: ['$riskData.routeOne', -1] },
+									loanAppId: '$_id',
+									fmccStatus: '$integrations.decisions.FMCC.status',
+									hbanStatus: '$integrations.decisions.HBAN.status',
+									lafsStatus: '$integrations.decisions.LAFS.status',
+									fifsStatus: '$integrations.decisions.FIFS.status',
+									email: '$applicant.email',
+									backendPath: '$backendPath',
+									isTestUser: '$applicant.isTestUser',
+									isTest: '$trackingLabel.isTest',
+									isDuplicate: '$trackingLabel.isDuplicate',
+									isFake: '$trackingLabel.isFake',
+									dealer: '$dealer',
+									amountFinanced: '$loanInfo.amountFinanced',
+									income: '$applicant.incomeReported',
+									bookValue: '$vehicle.bookValue',
+									wholeSale: '$vehicle.wholeSale'
+
+								}
+							}],
+							lean: null
+						},
+						decisions: {
+							aggregate: [{
+								$match: {
+									startDate: { $gte: startDate.toISOString(), $lt: endDate.toISOString() }
+									, message: {$nin: ['Demo']}
+								}
+							}, {
+								$project: {
+									decision: '$decision',
+									loanAppId: '$loanApp',
+									decisionError: '$error',
+									decisionStatus: '$status',
+									decisionMessage: '$message'
+								}
+							}],
+							lean: null
+						},
+						dealers: {
+							find: {}
+							, select: 'name'
+							, lean: null
+						},
+						decrypt: { keys: ['routeOne.decision', 'dealerTrack.decision'] }
+					};
+
+				window.restfull.post({ path: path, data: query, headers: { secret: localStorage.reporterSecret } }, function(err, resp) {
+					if (err) {
+						return log(err);
+					}
+					resp = JSON.parse(resp);
+					
+					var aggResponses = [resp[0], resp[1]]
+						, dealerResponse = resp[2].reduce((o, d) => {
+							o[d._id] = d.name;
+							return o;
+						}, {})
+						, joinedData = resp
+							.reduce((o, arr) => {
+								return arr
+									.map(r => {
+										var n = {};
+										Object.keys(r).forEach(k => {
+											if (['routeOne', 'dealerTrack'].indexOf(k) > -1) {
+												if (!r[k]) return;
+												n.middleMan = k;
+												n.middleManStatus = r[k].status;
+												n.middleManDecision = r[k].decision;
+												return;
+											}
+											if (/^[a-z]{4}Status$/.test(k)) {
+												var lender = k.match(/^([a-z]{4})Status$/)[1],
+													isNoResponse = r[k] === 'NO RESPONSE';
+												n.lender = lender;
+												n.isNoResponse = isNoResponse;
+											}
+											n[k] = r[k];
+										});
+										return n;
+									})
+									.reduce((i, r) => {
+										i[r.loanAppId] = i[r.loanAppId] || {};
+										Object.assign(i[r.loanAppId], r);
+										return i;
+									}, o)
+							}, {})
+						, statuses = Object.keys(joinedData)
+							.reduce((o, k) => {
+								var val = joinedData[k],
+									key;
+								if(!val.pricingStatus) return o;
+								if(/@autofi\./i.test(val.email)) return o;
+								if (val.middleManStatus === 'R') {
+									key = 'RETRY'
+								} else if (val.pricingStatus === 'INPROGRESS' && ['A', 'D', 'O', 'OT'].indexOf(val.middleManStatus) > -1) {
+									key = 'DECISION_MISSED'
+								} else if (val.isNoResponse || val.decisionError === 'No response') {
+									key = 'NO_RESPONSE'
+								} else if (val.decisionMessage === 'Demo') {
+									key = 'DEMO'
+								} else if (/There was a problem calculating taxes for your address/.test(val.pricingMessage)) {
+									key = 'INVALID_ADDRESS'
+								} else if (val.middleManStatus === 'Client.invalidData') {
+									key = 'INVALID_DATA'
+								} else if (val.decisionStatus === 'COMPLETED' && ['A', 'D', 'O', 'OT'].indexOf(val.middleManStatus) > -1) {
+									key = 'SUCCESS'
+								} else if (val.pricingStatus === 'INPROGRESS' && !val.middleManDecision) {
+									key = 'NO_RESPONSE'
+								} else if (val.pricingStatus === 'NOLENDERS' && !val.middleManDecision) {
+									key = 'NO_LENDERS'
+								} else if (/\bFICO\b/i.test(val.pricingMessage) && !val.middleManDecision) {
+									key = 'NO_FICO'
+								} else if (/\bSSN\b/i.test(val.pricingMessage) && !val.middleManDecision) {
+									key = 'INVALID_SSN'
+								} else {
+									key = 'OTHER'
+								}
+								o[key] = o[key] || [];
+								o[key].push(val);
+								return o;
+							}, {})
+						, statusPareto = Object.keys(statuses).map(s => {return {x: s, y: statuses[s].length}})
+						, decisions = statuses.SUCCESS
+							.reduce((o, s) => {
+								o[s.decision] = o[s.decision] || [];
+								o[s.decision].push(s);
+								return o;
+							}, {})
+						, decisionsPareto = Object.keys(decisions).map(d => {return {x: d, y: decisions[d].length}})
+						, unknowns = []
+						, reasonsByLoanAppId = {}
+						, reasons= decisions.DECLINED
+							.reduce((o, s) => {
+								var xml = s.middleManDecision
+									, reasons = xml.split('<B\:ConditionRejectionText>')
+										.filter(x => x.indexOf('</B:ConditionRejectionText>') > -1)
+										.map(x => x.split('</B:ConditionRejectionText>')[0].trim())
+								;
+								if(!reasons.length) {
+									reasons = xml.split('<B:DecisionComments>')
+										.filter(x => x.indexOf('</B:DecisionComments>') > -1)
+										.map(x => x.split('</B:DecisionComments>')[0].trim())
+										.map(x => {
+											return x.startsWith('LTV ') ? 'LTV' : x 
+										})
+								}
+								
+								if(!reasons.length) {
+									reasons = ['UNKNOWN']
+									unknowns.push(xml);
+								}
+								reasonsByLoanAppId[s.loanAppId] = reasons;
+								reasons.forEach(r => {
+									o[r] = o[r] || 0;
+									o[r]++;
+								})
+								return o;
+							}, {})
+						, reasonsPareto = Object.keys(reasons).map(r => {return {x: r, y: reasons[r]}})
+						, binnedReasonsMapping = {
+							"UNSATISFACTORY PRIOR CREDIT HISTORY- IN OUR JUDGMENT": "credit"
+							, "INSUFFICIENT PRIOR CREDIT HISTORY- IN OUR JUDGMENT": "credit"
+							, "INSUFFICIENT CREDIT HISTORY": "credit"
+							, "INSUFFICIENT SATISFACTORY CREDIT HISTORY": "credit"
+							, "LACK OF OR ESTIMATED COLLATERAL INSUFFICENT FOR CREDIT TERMS": "LTV"
+							, "LENGTH OF TIME ACCOUNTS HAVE BEEN ESTABLISHED": "credit"
+							, "INCOME IS INADEQUATE AS COMPARED TO ESTIMATED PAYMENT": "PTI"
+							, "NUMBER OF ACCOUNTS WITH RECENT DELINQUENCY": "credit"
+							, "ERROR_NO_RESPONSE": "Error"
+							, "UNABLE TO VERIFY THE VALIDITY OF THE SOCIAL SECURITY NUMBER": "Error"
+							, "INSUFFICIENT DOWN PAYMENT RELATED TO CONTRACT TERMS": "LTV"
+							, "EXCESSIVE DEBT FOR CREDIT TERMS REQUESTED": "credit"
+							, "TOO FEW REVOLVING ACCOUNTS PAID AS AGREED": "credit"
+							, "REPOSSESSION- FORECLOSURE- OR CHARGE OFF": "credit"
+							, "ERROR_INVALID_DATA": "Error"
+							, "PRIOR BANKRUPTCY": "credit"
+							, "Applicant-Credit unavailable on the terms requested": "credit"
+							, "ERROR_INVALID_ADDRESS": "Error"
+							, "ERROR_RETRY": "Error"
+							, "LTV": "LTV"
+						}
+						, dataDump = Object.keys(statuses).reduce((arr,status) => {
+							arr = arr.concat(statuses[status].map(l => {
+									var bookValue = l.bookValue || l.wholeSale || 'n/a'
+										, income = l.income === 9999999 ? 'n/a' : l.income
+										, amountFinanced = l.amountFinanced
+										, pmt = -1*calcPayment(0, 72, amountFinanced, 45, 360)
+										, ltv = bookValue === 'n/a' ? 'n/a' : amountFinanced / bookValue
+										, pti = isNaN(income) ? 'n/a' : pmt/income
+										, isSuccess = status === 'SUCCESS'
+										, isDeclined = l.decision === 'DECLINED'
+										, lender = l.lender || 'n/a'
+										, dealer = l.dealer ? dealerResponse[l.dealer] : 'n/a'
+									;
+									return {
+										reasons: isSuccess 
+											? (isDeclined ? reasonsByLoanAppId[l.loanAppId] : ['n/a'])
+											: [`ERROR_${status}`]
+										, decision: isSuccess ? l.decision : 'n/a'
+										, status: status
+										, dealer: dealer
+										, lender: lender.toUpperCase()
+										, income: income
+										, bookValue: bookValue
+										, amountFinanced: amountFinanced
+										, pti: pti
+										, ltv: ltv
+										, loanAppId: l.loanAppId
+									}
+								}));
+								return arr;
+							}, []).reduce((a, o) => {
+								a = a.concat(o.reasons.map(r => {
+									var reason = r.replace(/,/g, '-').replace(/\n/g, '->');
+									return {
+										loanAppId: o.loanAppId
+										, decision: o.decision
+										, status: o.status
+										, reason: reason
+										, bin: reason === 'n/a' 
+											? 'Decisioned' 
+											: (binnedReasonsMapping[reason] || 'Other') 
+										, dealer: o.dealer
+										, lender: o.lender
+										, income: o.income
+										, bookValue: o.bookValue
+										, amountFinanced: o.amountFinanced
+										, pti: o.pti
+										, ltv: o.ltv
+									}
+								}));
+								return a;								
+							}, [])
+						, header = ['Loan App Id', 'Decision', 'Status', 'Reason', 'Bin', 'Dealer', 'Lender', 'Income', 'Book Value', 'Amound Financed', 'PTI', 'LTV'].join(',')
+						, dataDumpCSV = header + '\n' + dataDump.reduce((a, o) => {
+								a.push([
+									o.loanAppId
+									, o.decision
+									, o.status
+									, o.reason
+									, o.bin
+									, o.dealer
+									, o.lender
+									, o.income
+									, o.bookValue
+									, o.amountFinanced
+									, o.pti
+									, o.ltv
+								].join(','));
+								return a;
+							}, []).join('\n')
+						, binnedReasons = dataDump.reduce((o, d) => {
+							o[d.bin] = o[d.bin] || 0;
+							o[d.bin]++;
+							return o;
+						}, {})
+						, binnedReasonsPareto = Object.keys(binnedReasons).map(r => {return {x: r, y: binnedReasons[r]}})
+						, invalidDataReasons = statuses['INVALID_DATA'].reduce((o, d) => {
+							var k;
+							try {
+								k = JSON.parse(d.pricingMessage).detail.faultdetails 
+							} catch(ex) {
+								k = d.pricingMessage;
+							}
+							o[k] = o[k] || 0;
+							o[k]++;
+							return o;
+						}, {})
+						, invalidDataReasonsPareto = Object.keys(invalidDataReasons).map(r => {return {x: r, y: invalidDataReasons[r]}})
+					; 
+
+					window.joinedData = joinedData;
+					console.log('STATUSES', statuses);
+					statusPareto.sort((a,b) => a.y < b.y ? 1 : -1)
+					var statusData = [
+						 {
+						   x: statusPareto.map(s => s.x)
+						   , y:  statusPareto.map(s => s.y)
+						   , type: 'bar'
+						 }
+					   ];
+					document.querySelector('#statuses').style.display = 'block';
+					Plotly.newPlot('statusPlot', statusData);
+
+					console.log('DECISIONS', decisions);
+					decisionsPareto.sort((a,b) => a.y < b.y ? 1 : -1)
+					var decisionData = [
+						 {
+						   x: decisionsPareto.map(d => d.x)
+						   , y:  decisionsPareto.map(d => d.y)
+						   , type: 'bar'
+						 }
+					   ];
+					document.querySelector('#decisions').style.display = 'block';
+					Plotly.newPlot('decisionPlot', decisionData);
+
+					console.log('REASONS', reasons);
+					reasonsPareto.sort((a,b) => a.y < b.y ? 1 : -1)
+					var reasonData = [
+						 {
+						   x: reasonsPareto.map(d => d.x)
+						   , y:  reasonsPareto.map(d => d.y)
+						   , type: 'bar'
+						 }
+					   ];
+					document.querySelector('#reasons').style.display = 'block';
+					Plotly.newPlot('reasonsPlot', reasonData);
+
+					console.log('UNKNOWNS', unknowns);
+
+					console.log('BINNED REASONS', binnedReasons);
+					binnedReasonsPareto.sort((a,b) => a.y < b.y ? 1 : -1);
+					var binnedReasonData = [
+							 {
+							   x: binnedReasonsPareto.map(d => d.x)
+							   , y:  binnedReasonsPareto.map(d => d.y)
+							   , type: 'bar'
+							 }
+						   ]
+						, binnedReasonsPieData = [{
+							values: binnedReasonsPareto.map(d => d.y),
+							labels: binnedReasonsPareto.map(d => d.x),
+							type: 'pie'
+						}]
+						, layout = {
+							height: 400,
+							width: 500
+						}
+					;
+					document.querySelector('#binnedReasons').style.display = 'block';
+					Plotly.newPlot('binnedReasonsPlot', binnedReasonData);
+					Plotly.newPlot('binnedReasonsPie', binnedReasonsPieData, layout);
+
+
+					console.log('INVALID REASONS', invalidDataReasons);
+					invalidDataReasonsPareto.sort((a,b) => a.y < b.y ? 1 : -1)
+					var invalidData = [
+						 {
+						   x: invalidDataReasonsPareto.map(d => d.x)
+						   , y:  invalidDataReasonsPareto.map(d => d.y)
+						   , type: 'bar'
+						 }
+					   ];
+					document.querySelector('#invalidDataReasons').style.display = 'block';
+					Plotly.newPlot('invalidDataReasonsPlot', invalidData);
+
+					
+					console.log('DATA DUMP', dataDump);
+					window.csv = dataDumpCSV;
+				});
+			})
+		</script>
+	</div>
+	<div id='statuses' style='display:none'>
+		<h2>Pareto of App Submit Statuses</h2>
+		<div id='statusPlot'></div>
+	</div>
+	<div id='decisions' style='display:none'>
+		<h2>Pareto of App Submit Decisions</h2>
+		<div id='decisionPlot'></div>
+	</div>
+	<div id='reasons' style='display:none'>
+		<h2>Pareto of App Decline Reasons</h2>
+		<div id='reasonsPlot'></div>
+	</div>
+	<div id='binnedReasons' style='display:none'>
+		<h2>Binned Decline Reasons and Errors</h2>
+		<div id='binnedReasonsPlot'></div>
+		<div id='binnedReasonsPie'></div>
+	</div>
+	<div id='invalidDataReasons' style='display:none'>
+		<h2>Pareto of Invalid Data Reasons</h2>
+		<div id='invalidDataReasonsPlot'></div>
+	</div>
+
+</body>
+
+</html>

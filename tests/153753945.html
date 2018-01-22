@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>Test</title>
+	<style>
+		* {
+			font-family: Arial;
+		}
+
+		body {
+			background-color: #232323;
+			color: #EFEFEF;
+		}
+
+		label, input, button {
+			display:block;
+			margin:0.5em;
+		}
+
+		button {
+			font-size:1.15em;
+		}
+
+		.pass {
+			font-weight:bold;
+			font-size:40px;
+			color: green;
+		}
+
+		.fail {
+			font-weight:bold;
+			font-size:40px;
+			color: red;
+		}
+
+	</style>
+	<script>
+		if (window.restfull === undefined) {
+		    (function() {
+
+		    	function get(options, callback) {
+		            var req = new XMLHttpRequest();
+		            req.open("GET", options.path, true);
+		            addHeaders(req, options);
+		            if (options.contentType !== false) 
+		                req.setRequestHeader("content-type", options.contentType || "application/json")
+		            req.onreadystatechange = function() {
+		    			handleResponse(req, this, callback);
+		            }
+		            req.send();
+		    	}
+		    	function post(options, callback) {
+		            var req = new XMLHttpRequest();
+		            req.open("POST", options.path, true);
+		            addHeaders(req, options);
+		            if (options.contentType !== false)
+		                req.setRequestHeader("content-type", options.contentType || "application/json")
+		            req.onreadystatechange = function() {
+		    			handleResponse(req, this, callback);
+		            }
+		            req.send(formatData(options));
+		    	}
+		    	function put(options, callback) {
+		            var req = new XMLHttpRequest();
+		            req.open("PUT", options.path, true);
+		            addHeaders(req, options);
+		            if (options.contentType !== false)
+		                req.setRequestHeader("content-type", options.contentType || "application/json")
+		            req.onreadystatechange = function() {
+		    			handleResponse(req, this, callback);
+		            }
+		            req.send(formatData(options));
+		    	}
+		    	function del(options, callback) {
+		            var req = new XMLHttpRequest();
+		            req.open("DELETE", options.path, true);
+		            addHeaders(req, options)
+		            if (options.contentType !== false)
+		                req.setRequestHeader("content-type", options.contentType || "application/json")
+		            req.onreadystatechange = function() {
+		            	handleResponse(req, this, callback);
+		            }
+		            req.send(formatData(options));
+		    	}
+
+		    	function handleResponse(req, xhr, callback) {
+		            if (req.readyState != 4) {
+		                return;
+		            }
+		    	    if (req.status >= 300){
+		            	if (callback) callback(xhr.response, null)
+		            }
+		            else if(req.readyState == 4) {
+		                if (callback) callback(null, xhr.response)
+		            }
+		    	}
+
+		        function addHeaders(req, options) {
+		            Object.keys(options.headers || {}).forEach(function(header) {
+		                req.setRequestHeader(header, options.headers[header]);
+		            })
+		        }
+
+		        function formatData(options) {
+		            if (options.contentType === false)
+		                return options.data
+		            if (options.contentType === undefined)
+		                return options.data;
+		            if (options.contentType.toLowerCase() != "application/json")
+		                return options.data;
+		            return options.data;
+		        }
+
+		    	window.restfull = {
+		    		get: get,
+		    		post: post,
+		    		put: put,
+		    		del: del
+		    	}
+		    }());
+		}
+	</script>
+</head>
+
+<body>
+	<header>
+		<h1>Test</h1>
+		<div>
+			<h2>Add dealer signup event and dealer go live events to amplitude</h2>
+			<div><a href='https://www.pivotaltracker.com/story/show/153753945'>https://www.pivotaltracker.com/story/show/153753945</a></div>
+			<p>
+				<h3>Requirements:</h3>
+				<ol>
+					<li>
+						Create two new panda dealer attributes:
+						<ul>
+							<li>Signup timestamp</li>
+							<li>Golive timestamp</li>
+						</ul>
+					<li>When a dealer is signed up, the signup timestamp is stored with the newly created panda dealer</li>
+					<li>When a dealer is enabled for the first time in production, the golive timestamp is stored</li>
+					<li>Send an amplitude event when a dealer signs up successfully with the dealer signup page</li>
+					<li>Send an amplitude event when a panda dealer is enabled for the first time</li>
+					<li>Import all the live dealer golive and signup dates to amplitude (I am assuming Joe has this data)</li>
+					<li>Update the signup/golive chart on amplitude</li>
+				</ol>
+			</p>
+		</div>
+	</header>
+	<section>
+		<h1>Results</h1>
+		<h2 id='results'></h2>
+	</section>
+	<script type="text/javascript">
+		var path = 'http://localhost:3272/query' // 'http://bogoin.herokuapp.com/query'; 
+			, query
+			, results
+		;
+		function getManualData() {
+			var dealerData = 
+					`dealer	status	dateSignedUp	dateGoLive	daysLive	week
+					Tasca Ford	LIVE	2/20/17	8/14/17	175	33
+					Thoroughbred Ford	LIVE	6/14/17	11/17/17	156	46
+					Witt Lincoln	LIVE	1/31/17	6/28/17	148	26
+					Kisselback Ford	LIVE	4/18/17	8/22/17	126	34
+					Olathe Lincoln	LIVE	7/11/17	11/10/17	122	45
+					Sawgrass Ford	LIVE	7/17/17	11/15/17	121	46
+					Capital Ford Inc.	LIVE	4/11/17	7/19/17	99	29
+					Fox Ford	LIVE	7/20/17	10/24/17	96	43
+					Matt Ford	LIVE	4/4/17	7/5/17	92	27
+					Stivers Ford Lincoln	LIVE	4/17/17	6/29/17	73	26
+					Friendly Ford	LIVE	3/10/17	5/19/17	70	20
+					Ricart	LIVE	10/26/16	1/3/17	69	1
+					Team Ford	LIVE	3/9/17	5/15/17	67	20
+					Richmond Ford	LIVE	7/31/17	10/6/17	67	40
+					Gary Crossley Ford	LIVE	3/2/17	5/5/17	64	18
+					Libertyville Lincoln          	LIVE	10/6/17	12/8/17	63	40
+					Inskeep Ford	LIVE	4/8/17	6/9/17	62	23
+					Olathe Ford Sales Inc	LIVE	4/17/17	6/17/17	61	24
+					Bob-Boyd Ford	LIVE	6/6/17	8/4/17	59	31
+					Gaudin Ford	LIVE	3/13/17	5/9/17	57	19
+					Ford Country Las Vegas	LIVE	3/14/17	5/10/17	57	19
+					Mark Jacobson Toyota	LIVE	7/24/17	9/19/17	57	38
+					Dahl Ford	LIVE	5/31/17	7/26/17	56	30
+					Crescent Ford	LIVE	3/7/17	5/1/17	55	18
+					Team Lincoln	LIVE	8/7/17	10/1/17	55	40
+					Green Ford	LIVE	4/19/17	6/9/17	51	23
+					Smith South Plains LINCOLN	LIVE	8/31/17	10/20/17	50	42
+					Northside	LIVE	8/7/17	9/21/17	45	38
+					Big Valley Lincoln	LIVE	10/25/17	12/8/17	44	43
+					Tom Wood Ford	LIVE	3/7/17	4/19/17	43	16
+					Tom Roush Lincoln	LIVE	9/28/17	11/10/17	43	45
+					Red McCombs	LIVE	3/9/17	4/20/17	42	16
+					Smith South Plains Ford	LIVE	7/13/17	8/22/17	40	34
+					McCombs Ford West	LIVE	3/13/17	4/21/17	39	16
+					Don Sanderson Ford Inc	LIVE	4/7/17	5/16/17	39	20
+					Kistler Ford	LIVE	10/12/17	11/20/17	39	47
+					Sam Pack   Richland HO	LIVE	10/30/17	12/8/17	39	44
+					Sam Pack Carrollton          	LIVE	10/30/17	12/8/17	39	44
+					Sam Pack Lewisville      	LIVE	10/30/17	12/8/17	39	44
+					Sam Pack Plano                 	LIVE	10/30/17	12/8/17	39	44
+					Dahl Lincoln	LIVE	10/3/17	11/3/17	31	44
+					Hempstead Ford                	LIVE	11/2/17	12/2/17	30	48
+					Tasca Cranston	LIVE	8/30/17	9/27/17	28	39
+					Bill Knight Ford	LIVE	10/4/17	10/27/17	23	43
+					Bill Knight Lincoln	LIVE	10/4/17	10/27/17	23	43
+					Big Valley Ford	LIVE	10/25/17	11/17/17	23	46
+					Metro Ford	LIVE	11/8/17	11/22/17	14	47
+					Hempstead Lincoln	LIVE	12/4/17	12/15/17	11	50
+					Morrie's Buffalo	IN PIPE	4/6/17		0	14
+					Apple Valley                     	IN PIPE	5/31/17		0	22
+					Anderson Ford of Lincoln	LIVE	6/7/17	12/22/17	198	23
+					Stamford Ford	IN PIPE	6/10/17		0	23
+					Morrie's Minnetonka	IN PIPE	6/13/17		0	24
+					Stamford Lincoln   	IN PIPE	6/22/17		0	25
+					Richmond Ford                  	IN PIPE	7/31/17		0	31
+					Earl Tindol                         	IN PIPE	8/2/17		0	31
+					Anderson Ford of St Joseph 	LIVE	8/31/17	12/22/17	113	35
+					Packey Webb                    	IN PIPE	9/22/17		0	38
+					WestPoint Lincoln         	IN PIPE	9/26/17		0	39
+					Lincoln of Wayne             	IN PIPE	9/29/17		0	39
+					Dick Smith Ford                 	IN PIPE	10/3/17		0	40
+					Ron Dupratt	DEAD	10/20/17		0	42
+					Fox Lincoln 	IN PIPE	10/24/17		0	43
+					Preston	IN PIPE	9/29/17		0	39
+					Tasca Lincoln                     	IN PIPE	10/30/17		0	44
+					Henry Curtis Ford             	LIVE	11/7/17	12/22/17	45	45
+					Metro Ford	IN PIPE	11/8/17		0	45
+					Hansel Ford                        	IN PIPE	11/16/17		0	46
+					Shults Ford Harmarville	IN PIPE	11/17/17		0	46
+					Shults Lincoln                 	IN PIPE	11/19/17		0	47
+					Cavalier Ford	IN PIPE			0	0
+					Cavalier Lincoln	LIVE		12/22/17	43091	51
+					Century Ford of Mt. Airy	IN PIPE			0	0
+					All American Ford of Point Pleasant	IN PIPE			0	0
+					All American Ford of Hackensack	IN PIPE			0	0
+					All American Ford of Paramus	IN PIPE			0	0
+					All American Ford of Old Bridge	IN PIPE			0	0
+					James Collins Ford	IN PIPE			0	0
+					Herb Chambers Lincoln of Norwood	IN PIPE			0	0
+					Toyota of Tampa Bay	IN PIPE			0	0
+					Cavalier Chesapeake	LIVE		12/22/17	43091	51`
+					.split('\n')
+					.map(r => r.trim().split('\t'))
+				, header = dealerData.shift()
+				, dealerObjects = dealerData.map(arr => header.reduce((o,k, j) => { o[k] = arr[j].trim();  return o; },{}))
+				, pandaDealerData = `/* 1 */
+					{
+						"name" : "Tom Wood Ford"
+					}
+
+					/* 2 */
+					{
+						"name" : "Red McCombs"
+					}
+
+					/* 3 */
+					{
+						"name" : "McCombs Ford West"
+					}
+
+					/* 4 */
+					{
+						"name" : "Gaudin Ford"
+					}
+
+					/* 5 */
+					{
+						"name" : "Gary Crossley Ford"
+					}
+
+					/* 6 */
+					{
+						"name" : "Green Ford"
+					}
+
+					/* 7 */
+					{
+						"name" : "Kisselback Ford"
+					}
+
+					/* 8 */
+					{
+						"name" : "Northside Ford"
+					}
+
+					/* 9 */
+					{
+						"name" : "AutoFi Dealership"
+					}
+
+					/* 10 */
+					{
+						"name" : "Olathe Lincoln"
+					}
+
+					/* 11 */
+					{
+						"name" : "Anderson Ford of St. Joseph"
+					}
+
+					/* 12 */
+					{
+						"name" : "Five Star Ford of Lewisville"
+					}
+
+					/* 13 */
+					{
+						"name" : "Olathe Ford Sales Inc"
+					}
+
+					/* 14 */
+					{
+						"name" : "Stivers Ford Lincoln"
+					}
+
+					/* 15 */
+					{
+						"name" : "Don Sanderson Ford Inc"
+					}
+
+					/* 16 */
+					{
+						"name" : "Tasca Ford"
+					}
+
+					/* 17 */
+					{
+						"name" : "Smith South Plains"
+					}
+
+					/* 18 */
+					{
+						"name" : "Team Ford"
+					}
+
+					/* 19 */
+					{
+						"name" : "Mark Jacobson Toyota"
+					}
+
+					/* 20 */
+					{
+						"name" : "Crescent Ford"
+					}
+
+					/* 21 */
+					{
+						"name" : "Team Lincoln"
+					}
+
+					/* 22 */
+					{
+						"name" : "Fox Ford"
+					}
+
+					/* 23 */
+					{
+						"name" : "Matt Ford"
+					}
+
+					/* 24 */
+					{
+						"name" : "Smith South Plains Lincoln"
+					}
+
+					/* 25 */
+					{
+						"name" : "Ford Country Las Vegas"
+					}
+
+					/* 26 */
+					{
+						"name" : "Sawgrass Ford"
+					}
+
+					/* 27 */
+					{
+						"name" : "Bill Knight Ford"
+					}
+
+					/* 28 */
+					{
+						"name" : "Bill Knight Lincoln"
+					}
+
+					/* 29 */
+					{
+						"name" : "Kistler Ford"
+					}
+
+					/* 30 */
+					{
+						"name" : "Thoroughbred Ford"
+					}
+
+					/* 31 */
+					{
+						"name" : "Tom Roush Lincoln"
+					}
+
+					/* 32 */
+					{
+						"name" : "Thoroughbred Ford"
+					}
+
+					/* 33 */
+					{
+						"name" : "Big Valley Ford"
+					}
+
+					/* 34 */
+					{
+						"name" : "Metro Ford"
+					}
+
+					/* 35 */
+					{
+						"name" : "Sam Pack's Five Star Ford (Carrollton)"
+					}
+
+					/* 36 */
+					{
+						"name" : "Ricart Ford"
+					}
+
+					/* 37 */
+					{
+						"name" : "Dahl Ford"
+					}
+
+					/* 38 */
+					{
+						"name" : "Friendly Ford"
+					}
+
+					/* 39 */
+					{
+						"name" : "Anderson of Lincoln Ford"
+					}
+
+					/* 40 */
+					{
+						"name" : "Five Star Ford of Plano"
+					}
+
+					/* 41 */
+					{
+						"name" : "Five Star Ford (North Richland Hills)"
+					}
+
+					/* 42 */
+					{
+						"name" : "cars.com"
+					}
+
+					/* 43 */
+					{
+						"name" : "Tasca Cranston"
+					}
+
+					/* 44 */
+					{
+						"name" : "Big Valley Lincoln"
+					}
+
+					/* 45 */
+					{
+						"name" : "Cavalier Ford at Chesapeake Square"
+					}
+
+					/* 46 */
+					{
+						"name" : "Witt Lincoln"
+					}
+
+					/* 47 */
+					{
+						"name" : "Cavalier Lincoln"
+					}
+
+					/* 48 */
+					{
+						"name" : "Epic Ford"
+					};`
+				, names = (pandaDealerData.match(/"name" : "(.*)"/g) || []).map(n => n.match(/"name" : "(.*)"/)[1])
+				, nameMappings = {
+					'Northside': 'Northside Ford'
+					, 'Smith South Plains LINCOLN': 'Smith South Plains Lincoln'
+					, 'Smith South Plains Ford': 'Smith South Plains'
+					, 'Sam Pack Carrollton': 'Sam Pack\'s Five Star Ford (Carrollton)'
+					, 'Ricart': 'Ricart Ford'
+					, 'Anderson Ford of St Joseph': 'Anderson Ford of St. Joseph'
+					, 'Anderson Ford of Lincoln': 'Anderson of Lincoln Ford'
+					, 'Sam Pack Lewisville': 'Five Star Ford of Lewisville'
+					, 'Sam Pack Plano': 'Five Star Ford of Plano'
+					, 'Sam Pack   Richland HO': 'Five Star Ford (North Richland Hills)'
+					, 'Cavalier Chesapeake': 'Cavalier Ford at Chesapeake Square'
+				}
+				, dealerNamesToReplace = Object.keys(nameMappings)
+			;
+			dealerNamesToReplace.forEach(name => {
+				var dObj = dealerObjects.find(d => d.dealer === name);
+				if(!dObj) return;
+				dObj.dealer = nameMappings[name];
+			})			
+
+
+			var	 uniqueNames = names.filter(name => !dealerObjects.map(d => d.dealer).includes(name))
+				, pandaDealersToUpdate = dealerObjects.map(d => {
+						var dealerName =  nameMappings[d.dealer] || names.find(n => n === d.dealer)
+						return dealerName ? Object.assign({pandaDealer: dealerName}, d) : dealerName
+					})
+					.filter(n => !!n)
+				, inserts = pandaDealersToUpdate.map(d => {
+					return [
+						{name: d.pandaDealer}
+						, {$set: {
+							signUpDate: d.dateSignedUp 
+								? new Date(d.dateSignedUp).toISOString()
+								: null
+							, goLiveDate: 
+								d.dateGoLive
+								? new Date(d.dateGoLive).toISOString()
+								: null
+							}
+						}
+						, {multi: false, upsert: false}
+					]
+				})
+			;
+
+			console.log('NAMES', names);
+			console.log('UNIQUE NAMES', uniqueNames);
+			console.log('DEALER OBJECTS', dealerObjects)
+			console.log('DEALERS TO UPDATE', inserts)
+		}
+
+		function generateAmplitudeEvents() {
+			var trackIds = []
+				, amplitudePath = 'http://localhost:3001/amptrack/'
+				, clientId = 'bccbc7a6a8932f27eeaa7186940f63b8' // '1623eadbb4321f3fb79a1e6638e754ee'
+				, headers = {
+						'Pragma': 'no-cache'
+						, 'Cache-Control': 'no-cache'
+						, 'Accept': '*/*'
+						, 'Accept-Language': 'en-US,en;q=0.9,ko;q=0.8'
+					}
+				, i =0
+				, dt = (new Date(2124, 10, 23))*1
+			while(i < 10000) {
+				trackIds.push(dt + i++);
+			}
+			var ObjectId = function(v) { return v }
+			 	, dealerData = `
+					{
+					    "code" : "0010",
+					    "name" : "Tom Wood Ford",
+					    "signUpDate" : "2017-03-07T08:00:00.000Z",
+					    "goLiveDate" : "2017-04-19T07:00:00.000Z"
+					}
+
+					/* 2 */
+					{
+					    "code" : "0018",
+					    "name" : "Red McCombs",
+					    "signUpDate" : "2017-03-09T08:00:00.000Z",
+					    "goLiveDate" : "2017-04-20T07:00:00.000Z"
+					}
+
+					/* 3 */
+					{
+					    "code" : "001F",
+					    "name" : "McCombs Ford West",
+					    "signUpDate" : "2017-03-13T07:00:00.000Z",
+					    "goLiveDate" : "2017-04-21T07:00:00.000Z"
+					}
+
+					/* 4 */
+					{
+					    "name" : "Gaudin Ford",
+					    "code" : "001E",
+					    "signUpDate" : "2017-03-13T07:00:00.000Z",
+					    "goLiveDate" : "2017-05-09T07:00:00.000Z"
+					}
+
+					/* 5 */
+					{
+					    "name" : "Gary Crossley Ford",
+					    "code" : "0022",
+					    "signUpDate" : "2017-03-02T08:00:00.000Z",
+					    "goLiveDate" : "2017-05-05T07:00:00.000Z"
+					}
+
+					/* 6 */
+					{
+					    "code" : "005A",
+					    "name" : "Green Ford",
+					    "signUpDate" : "2017-04-19T07:00:00.000Z",
+					    "goLiveDate" : "2017-06-09T07:00:00.000Z"
+					}
+
+					/* 7 */
+					{
+					    "code" : "0057",
+					    "name" : "Kisselback Ford",
+					    "signUpDate" : "2017-04-18T07:00:00.000Z",
+					    "goLiveDate" : "2017-08-22T07:00:00.000Z"
+					}
+
+					/* 8 */
+					{
+					    "code" : "99A6",
+					    "name" : "Northside Ford",
+					    "signUpDate" : "2017-08-07T07:00:00.000Z",
+					    "goLiveDate" : "2017-09-21T07:00:00.000Z"
+					}
+
+					/* 10 */
+					{
+					    "code" : "9925",
+					    "name" : "Olathe Lincoln",
+					    "signUpDate" : "2017-07-11T07:00:00.000Z",
+					    "goLiveDate" : "2017-11-10T08:00:00.000Z"
+					}
+
+					/* 11 */
+					{
+					    "code" : "999C",
+					    "name" : "Anderson Ford of St. Joseph",
+					    "signUpDate" : "2017-08-31T07:00:00.000Z",
+					    "goLiveDate" : "2017-12-22T08:00:00.000Z"
+					}
+
+					/* 12 */
+					{
+					    "name" : "Five Star Ford of Lewisville",
+					    "code" : "99CF",
+					    "signUpDate" : "2017-10-30T07:00:00.000Z",
+					    "goLiveDate" : "2017-12-08T08:00:00.000Z"
+					}
+
+					/* 13 */
+					{
+					    "code" : "0055",
+					    "name" : "Olathe Ford Sales Inc",
+					    "signUpDate" : "2017-04-17T07:00:00.000Z",
+					    "goLiveDate" : "2017-06-17T07:00:00.000Z"
+					}
+
+					/* 14 */
+					{
+					    "code" : "0056",
+					    "name" : "Stivers Ford Lincoln",
+					    "signUpDate" : "2017-04-17T07:00:00.000Z",
+					    "goLiveDate" : "2017-06-29T07:00:00.000Z"
+					}
+
+					/* 15 */
+					{
+					    "code" : "Z02B",
+					    "name" : "Don Sanderson Ford Inc",
+					    "signUpDate" : "2017-04-07T07:00:00.000Z",
+					    "goLiveDate" : "2017-05-16T07:00:00.000Z"
+					}
+
+					/* 16 */
+					{
+					    "code" : "TSCN",
+					    "name" : "Tasca Ford",
+					    "signUpDate" : "2017-02-20T08:00:00.000Z",
+					    "goLiveDate" : "2017-08-14T07:00:00.000Z"
+					}
+
+					/* 17 */
+					{
+					    "code" : "9926",
+					    "name" : "Smith South Plains",
+					    "signUpDate" : "2017-07-13T07:00:00.000Z",
+					    "goLiveDate" : "2017-08-22T07:00:00.000Z"
+					}
+
+					/* 18 */
+					{
+					    "code" : "0019",
+					    "name" : "Team Ford",
+					    "signUpDate" : "2017-03-09T08:00:00.000Z",
+					    "goLiveDate" : "2017-05-15T07:00:00.000Z"
+					}
+
+					/* 19 */
+					{
+					    "name" : "Mark Jacobson Toyota",
+					    "code" : "SETF",
+					    "signUpDate" : "2017-07-24T07:00:00.000Z",
+					    "goLiveDate" : "2017-09-19T07:00:00.000Z"
+					}
+
+					/* 20 */
+					{
+					    "code" : "0011",
+					    "name" : "Crescent Ford",
+					    "signUpDate" : "2017-03-07T08:00:00.000Z",
+					    "goLiveDate" : "2017-05-01T07:00:00.000Z"
+					}
+
+					/* 21 */
+					{
+					    "code" : "99A5",
+					    "name" : "Team Lincoln",
+					    "signUpDate" : "2017-08-07T07:00:00.000Z",
+					    "goLiveDate" : "2017-10-01T07:00:00.000Z"
+					}
+
+					/* 22 */
+					{
+					    "code" : "999A",
+					    "name" : "Fox Ford",
+					    "signUpDate" : "2017-07-20T07:00:00.000Z",
+					    "goLiveDate" : "2017-10-24T07:00:00.000Z"
+					}
+
+					/* 23 */
+					{
+					    "code" : "Z024",
+					    "name" : "Matt Ford",
+					    "signUpDate" : "2017-04-04T07:00:00.000Z",
+					    "goLiveDate" : "2017-07-05T07:00:00.000Z"
+					}
+
+					/* 24 */
+					{
+					    "code" : "99AB",
+					    "name" : "Smith South Plains Lincoln",
+					    "signUpDate" : "2017-08-31T07:00:00.000Z",
+					    "goLiveDate" : "2017-10-20T07:00:00.000Z"
+					}
+
+					/* 25 */
+					{
+					    "code" : "0020",
+					    "name" : "Ford Country Las Vegas",
+					    "signUpDate" : "2017-03-14T07:00:00.000Z",
+					    "goLiveDate" : "2017-05-10T07:00:00.000Z"
+					}
+
+					/* 26 */
+					{
+					    "code" : "9928",
+					    "name" : "Sawgrass Ford",
+					    "signUpDate" : "2017-07-17T07:00:00.000Z",
+					    "goLiveDate" : "2017-11-15T08:00:00.000Z"
+					}
+
+					/* 27 */
+					{
+					    "code" : "99C5",
+					    "name" : "Bill Knight Ford",
+					    "signUpDate" : "2017-10-04T07:00:00.000Z",
+					    "goLiveDate" : "2017-10-27T07:00:00.000Z"
+					}
+
+					/* 28 */
+					{
+					    "code" : "99C6",
+					    "name" : "Bill Knight Lincoln",
+					    "signUpDate" : "2017-10-04T07:00:00.000Z",
+					    "goLiveDate" : "2017-10-27T07:00:00.000Z"
+					}
+
+					/* 29 */
+					{
+					    "name" : "Kistler Ford",
+					    "code" : "99CB",
+					    "signUpDate" : "2017-10-12T07:00:00.000Z",
+					    "goLiveDate" : "2017-11-20T08:00:00.000Z"
+					}
+
+					/* 30 */
+					{
+					    "code" : "435E",
+					    "name" : "Thoroughbred Ford",
+					    "signUpDate" : "2017-06-14T07:00:00.000Z",
+					    "goLiveDate" : "2017-11-17T08:00:00.000Z"
+					}
+
+					/* 31 */
+					{
+					    "code" : "99C1",
+					    "name" : "Tom Roush Lincoln",
+					    "signUpDate" : "2017-09-28T07:00:00.000Z",
+					    "goLiveDate" : "2017-11-10T08:00:00.000Z"
+					}
+
+					/* 33 */
+					{
+					    "name" : "Big Valley Ford",
+					    "code" : "99CE",
+					    "signUpDate" : "2017-10-25T07:00:00.000Z",
+					    "goLiveDate" : "2017-11-17T08:00:00.000Z"
+					}
+
+					/* 34 */
+					{
+					    "name" : "Metro Ford",
+					    "code" : "99D4",
+					    "signUpDate" : "2017-11-08T08:00:00.000Z",
+					    "goLiveDate" : "2017-11-22T08:00:00.000Z"
+					}
+
+					/* 35 */
+					{
+					    "code" : "99D5",
+					    "name" : "Sam Pack's Five Star Ford (Carrollton)",
+					    "signUpDate" : "2017-10-30T07:00:00.000Z",
+					    "goLiveDate" : "2017-12-08T08:00:00.000Z"
+					}
+
+					/* 36 */
+					{
+					    "code" : "RFRD",
+					    "name" : "Ricart Ford",
+					    "signUpDate" : "2016-10-26T07:00:00.000Z",
+					    "goLiveDate" : "2017-01-03T08:00:00.000Z"
+					}
+
+					/* 37 */
+					{
+					    "code" : "4355",
+					    "name" : "Dahl Ford",
+					    "signUpDate" : "2017-05-31T07:00:00.000Z",
+					    "goLiveDate" : "2017-07-26T07:00:00.000Z"
+					}
+
+					/* 38 */
+					{
+					    "name" : "Friendly Ford",
+					    "code" : "001D",
+					    "signUpDate" : "2017-03-10T08:00:00.000Z",
+					    "goLiveDate" : "2017-05-19T07:00:00.000Z"
+					}
+
+					/* 39 */
+					{
+					    "code" : "4358",
+					    "name" : "Anderson of Lincoln Ford",
+					    "signUpDate" : "2017-06-07T07:00:00.000Z",
+					    "goLiveDate" : "2017-12-22T08:00:00.000Z"
+					}
+
+					/* 40 */
+					{
+					    "name" : "Five Star Ford of Plano",
+					    "code" : "CFCB",
+					    "signUpDate" : "2017-10-30T07:00:00.000Z",
+					    "goLiveDate" : "2017-12-08T08:00:00.000Z"
+					}
+
+					/* 41 */
+					{
+					    "name" : "Five Star Ford (North Richland Hills)",
+					    "code" : "99D0",
+					    "signUpDate" : "2017-10-30T07:00:00.000Z",
+					    "goLiveDate" : "2017-12-08T08:00:00.000Z"
+					}
+
+					/* 43 */
+					{
+					    "name" : "Tasca Cranston",
+					    "code" : "TSCA",
+					    "signUpDate" : "2017-08-30T07:00:00.000Z",
+					    "goLiveDate" : "2017-09-27T07:00:00.000Z"
+					}
+
+					/* 44 */
+					{
+					    "code" : "CFD1",
+					    "name" : "Big Valley Lincoln",
+					    "signUpDate" : "2017-10-25T07:00:00.000Z",
+					    "goLiveDate" : "2017-12-08T08:00:00.000Z"
+					}
+
+					/* 45 */
+					{
+					    "code" : "CFDE",
+					    "name" : "Cavalier Ford at Chesapeake Square",
+					    "signUpDate" : "2017-12-07T08:00:00.000Z",
+					    "goLiveDate" : "2017-12-22T08:00:00.000Z"
+					}
+
+					/* 46 */
+					{
+					    "code" : "Z00F",
+					    "name" : "Witt Lincoln",
+					    "signUpDate" : "2017-01-31T08:00:00.000Z",
+					    "goLiveDate" : "2017-06-28T07:00:00.000Z"
+					}
+
+					/* 47 */
+					{
+					    "code" : "CFDD",
+					    "name" : "Cavalier Lincoln",
+					    "signUpDate" : "2017-12-07T08:00:00.000Z",
+					    "goLiveDate" : "2017-12-22T08:00:00.000Z"
+					}
+
+					/* 48 */
+					{
+					    "code" : "CFD0",
+					    "name" : "Epic Ford",
+					    "signUpDate" : "2017-11-20T08:00:00.000Z",
+					    "goLiveDate" : "2017-12-26T07:00:00.000Z"
+					}`
+					.replace(/\/\*\s\d*\s\*\//g, ',')
+					.trim()
+				, dealerArr = JSON.parse('[' + dealerData + ']')
+				, dealerSignUp = dealerArr.map(d => {
+					return d.signUpDate 
+						? {name: d.name, signUp: new Date(d.signUpDate)} 
+						: null
+					})
+					.filter(d => !!d)
+					.map(d => {
+						var tid = trackIds.shift();
+						return JSON.parse(`[{
+								"device_id":"eb68d949-3c42-4207-a731-318f95111f68Z"
+								,"user_id":"${tid}"
+								,"timestamp": ${new Date(d.signUp)*1}
+								,"event_id":2
+								,"session_id":${tid}
+								,"event_type":"Dealer: New Dealer Signup"
+								,"version_name":null
+								,"platform":"Web"
+								,"os_name":"Chrome"
+								,"os_version":"63"
+								,"device_model":"Mac"
+								,"language":"en-US"
+								,"api_properties":{}
+								,"event_properties": {
+									"dealer":"${d.name}"
+									, "trackId":"${tid}"
+								}
+								,"user_properties":{}
+								,"uuid":"61e4ff50-e1ab-4bff-96c8-a69ac638cc7d"
+								,"library":{
+									"name":"amplitude-js"
+									,"version":"3.4.0"
+								}
+								,"sequence_number":2
+								,"groups":{}
+								,"user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36"
+							}]`);
+					})
+					.map(d => {
+						var data = JSON.stringify(d);
+
+						return {
+							headers: headers
+							, data: `client=${clientId}&e=${encodeURIComponent(data)}&v=2&upload_time=${d[0].timestamp}&checksum=${data.length}`
+							, path: amplitudePath
+							, contentType: 'application/x-www-form-urlencoded; charset=UTF-8'
+						}
+					})
+				, dealerGoLive = dealerArr.map(d => {
+					return d.goLiveDate && d.signUpDate
+						? {name: d.name , goLive: new Date(d.goLiveDate), signUp: new Date(d.signUpDate)} 
+						: null
+					})
+					.filter(d => !!d)
+					.map(d => {
+						var tid = trackIds.shift()
+							, daysToGoLive = (new Date(d.goLive) - new Date(d.signUp))/(24*60*60*1000)
+						;
+						return JSON.parse(`[{
+								"device_id":"eb68d949-3c42-4207-a731-318f95111f68Z"
+								,"user_id":"${tid}"
+								,"timestamp": ${new Date(d.goLive)*1}
+								,"event_id":2
+								,"session_id":${tid}
+								,"event_type":"Dealer: New Dealer Go Live"
+								,"version_name":null
+								,"platform":"Web"
+								,"os_name":"Chrome"
+								,"os_version":"63"
+								,"device_model":"Mac"
+								,"language":"en-US"
+								,"api_properties":{}
+								,"event_properties": {
+									"dealer":"${d.name}"
+									, "trackId":"${tid}"
+									, "daysToGoLive": ${daysToGoLive}
+								}
+								,"user_properties":{}
+								,"uuid":"61e4ff50-e1ab-4bff-96c8-a69ac638cc7d"
+								,"library":{
+									"name":"amplitude-js"
+									,"version":"3.4.0"
+								}
+								,"sequence_number":2
+								,"groups":{}
+								,"user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36"
+							}]`);
+					})
+					.map(d => {
+						var data = JSON.stringify(d);
+						return {
+							headers: headers
+							, data: `client=${clientId}&e=${encodeURIComponent(data)}&v=2&upload_time=${d[0].timestamp}&checksum=${data.length}`
+							, path: amplitudePath
+							, contentType: 'application/x-www-form-urlencoded; charset=UTF-8'
+						}
+					})
+
+			;
+
+
+			/*
+			
+			 */
+
+			console.log('SIGN UP DEALERS', dealerSignUp);
+			console.log('GO LIVE DEALERS', dealerGoLive);
+
+			[dealerSignUp, dealerGoLive].forEach(a => {
+				a.forEach(item => {
+					setTimeout(window.restfull.post(item), 100);					
+				})
+			})
+		}
+
+
+		function analyzeResults(err, resp) {
+			if (err) {
+				return console.log('ERROR', err);
+			}
+			resp = JSON.parse(resp);
+			console.log("RESPONSE", resp);
+		}
+
+		getManualData();
+		generateAmplitudeEvents();
+
+	</script>
+</body>
+
+</html>

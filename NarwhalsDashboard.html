@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>Decisioning Analysis</title>
+	<style>
+		* {
+			font-family: Arial;
+		}
+
+		body {
+			background-color: #232323;
+			color: #EFEFEF;
+		}
+
+		label, input, button {
+			display:block;
+			margin:0.5em;
+		}
+
+		button {
+			font-size:1.15em;
+		}
+
+	</style>
+ 	<script src="http://nether.space/plotly.js"></script>
+	<script src="http://nether.space/libs/restfull.js"></script>
+</head>
+
+<body>
+	<h1>Decisioning Analysis</h1>
+	<!--
+		Things to put in this dashboard:
+		1. Error Reasons (Date Pareto)
+		2. Smart Cow Server Health
+		3. Velocity
+		4. 
+	-->
+	<div>
+		<h2>Choose the date range</h2>
+		<div id='dateRange'>
+			<label>Start Date:</label>
+			<input type='text' id='start'/>
+			<label>End Date:</label>
+			<input type='text' id='end'/>
+			<button id='run'>Run</button>
+		</div>
+	</div>
+	<div id='plots'></div>
+	<div id='decisions' style='display:none'>
+		<h2>Pareto of App Submit Decisions</h2>
+		<div id='decisionPlot'></div>
+	</div>
+	<div id='reasons' style='display:none'>
+		<h2>Pareto of App Decline Reasons</h2>
+		<div id='reasonsPlot'></div>
+	</div>
+	<div id='binnedReasons' style='display:none'>
+		<h2>Binned Decline Reasons and Errors</h2>
+		<div id='binnedReasonsPlot'></div>
+		<div id='binnedReasonsPie'></div>
+	</div>
+	<div id='invalidDataReasons' style='display:none'>
+		<h2>Pareto of Invalid Data Reasons</h2>
+		<div id='invalidDataReasonsPlot'></div>
+	</div>
+	<script type="text/javascript">
+		var DEFAULT_DATE_RANGE = 21;
+		
+		function setDateRange() {
+			var	endDate = new Date(),
+				startDate = new Date()
+			;
+			startDate.setDate(startDate.getDate() - DEFAULT_DATE_RANGE);	
+			endDate.setDate(endDate.getDate() + 1);	
+			document.querySelector('#start').value = startDate.toLocaleDateString();
+			document.querySelector('#end').value = endDate.toLocaleDateString();		
+		}
+
+		function round(n, decimalPlaces) {
+			var dp = Math.pow(10,decimalPlaces || 0);
+			return Math.round(n * dp) / dp;
+		}
+
+		function dailyInterestFee(amountFinanced, apr, numberOfDays, daysInAYear) {
+			daysInAYear = daysInAYear || 360;
+			return round(amountFinanced * apr * numberOfDays / daysInAYear , 2);
+		}
+
+		function calcPayment(ratePerPeriod, term, amountfinanced, firstPaymentDayOffset, daysInAYear) {
+			var numberOfDays = (firstPaymentDayOffset || 30) - 30;
+			var additionalInterest = dailyInterestFee(amountfinanced, ratePerPeriod * 12, numberOfDays, daysInAYear || 360);
+
+			amountfinanced += additionalInterest;
+			return ratePerPeriod === 0
+					? -amountfinanced / term
+					: -amountfinanced*Math.pow(1+ratePerPeriod,term)*ratePerPeriod/(Math.pow(1+ratePerPeriod,term)-1);
+		}
+
+		function createPareto(title, data) {
+			var $plots = document.querySelector('#plots')
+				, $div = document.createElement('div')
+				, paretoData = Object.keys(data).map(s => {return {x: s, y: typeof(data[s]) === 'number' ? data[s] : data[s].length}})
+			;
+			paretoData.sort((a,b) => a.y < b.y ? 1 : -1)
+			var plotData = [
+				 {
+				   x: paretoData.map(s => s.x)
+				   , y:  paretoData.map(s => s.y)
+				   , type: 'bar'
+				 }
+			   ];
+			$div.id = title.replace(/[^0-9a-zA-z-_]/g, '-')
+			$div.innerHTML = `<h2>${title}</h2><div class='plot' id='${$div.id}-plot'></div>`
+			$plots.appendChild($div);
+			Plotly.newPlot(`${$div.id}-plot`, plotData);
+		}
+
+		function createTimePareto(title, data, periodBin) {
+			var minDate = new Date()*1
+				, maxDate = new Date()
+				dates = Object.keys(data).reduce((o,k) => {
+					data[k].forEach(r => {
+						var d = new Date(r.dateCreated.toLocaleDateString())*1;
+						o[d] = o[d] || [];
+						o[d].push(r.dateCreated);
+						minDate = Math.min(d, minDate)
+						maxDate = Math.max(d, maxDate)
+	 				})
+					return o;
+				}, {})
+				, dateBins = []
+			;
+
+			var ct = 0
+				,  d = new Date(minDate)
+			;
+			while(d*1 <= maxDate) {
+				dateBins.push(d);
+				d = new Date(minDate);
+				ct += periodBin;
+				d.setDate(d.getDate() + ct);
+			}
+			var x = dateBins.map(d => new Date(d).toLocaleDateString());
+			
+			var $plots = document.querySelector('#plots')
+				, $div = document.createElement('div')
+				, binnedParetoData = Object.keys(data).reduce((o, k) => {
+						var d = data[k];
+						o[k] = {
+							x: x
+							, y: x.map((date,i) => {
+									console.log(date, i)
+									return d.filter(r => {
+										return i < x.length 
+											? (r.dateCreated >= new Date(date) && r.dateCreated < new Date(x[i+1]))
+											: r.dateCreated >= new Date(date)
+										
+									}).length;
+								})
+							, name: k
+							, type: 'bar'};
+						return o;
+					}, {})
+				, plotData = Object.keys(binnedParetoData).map(k => binnedParetoData[k])
+			;
+
+			$div.id = title.replace(/[^0-9a-zA-z-_]/g, '-')
+			$div.innerHTML = `<h2>${title}</h2><div class='plot' id='${$div.id}-plot'></div>`
+			$plots.appendChild($div);
+			Plotly.newPlot(`${$div.id}-plot`, plotData, {barmode: 'stack'});
+		}
+
+		function renderDashboard(err, resp) {
+			if (err) {
+				return log(err);
+			}
+			resp = JSON.parse(resp);
+			
+			var aggResponses = [resp[0], resp[1]]
+				, dealerResponse = resp[2].reduce((o, d) => {
+					o[d._id] = d.name;
+					return o;
+				}, {})
+				, joinedData = resp
+					.reduce((o, arr) => {
+						return arr
+							.map(r => {
+								var n = {};
+								Object.keys(r).forEach(k => {
+									if (['routeOne', 'dealerTrack'].indexOf(k) > -1) {
+										if (!r[k]) return;
+										n.middleMan = k;
+										n.middleManStatus = r[k].status;
+										n.middleManDecision = r[k].decision;
+										return;
+									}
+									if (/^[a-z]{4}Status$/.test(k)) {
+										var lender = k.match(/^([a-z]{4})Status$/)[1],
+											isNoResponse = r[k] === 'NO RESPONSE';
+										n.lender = lender;
+										n.isNoResponse = isNoResponse;
+									}
+									if(k === 'dateCreated') {
+										return n[k] = new Date(r[k]);
+									}
+									n[k] = r[k];
+								});
+								return n;
+							})
+							.reduce((i, r) => {
+								i[r.loanAppId] = i[r.loanAppId] || {};
+								Object.assign(i[r.loanAppId], r);
+								return i;
+							}, o)
+					}, {})
+				, statuses = Object.keys(joinedData)
+					.reduce((o, k) => {
+						var val = joinedData[k],
+							key;
+						if(!val.pricingStatus) return o;
+						if(/@autofi\./i.test(val.email)) return o;
+						if (val.middleManStatus === 'R') {
+							key = 'RETRY'
+						} else if (val.pricingStatus === 'INPROGRESS' && ['A', 'D', 'O', 'OT'].indexOf(val.middleManStatus) > -1) {
+							key = 'DECISION_MISSED'
+						} else if (val.isNoResponse || val.decisionError === 'No response') {
+							key = 'NO_RESPONSE'
+						} else if (val.decisionMessage === 'Demo') {
+							key = 'DEMO'
+						} else if (/There was a problem calculating taxes for your address/.test(val.pricingMessage)) {
+							key = 'INVALID_ADDRESS'
+						} else if (val.middleManStatus === 'Client.invalidData') {
+							key = 'INVALID_DATA'
+						} else if (val.decisionStatus === 'COMPLETED' && ['A', 'D', 'O', 'OT'].indexOf(val.middleManStatus) > -1) {
+							key = 'SUCCESS'
+						} else if (val.pricingStatus === 'INPROGRESS' && !val.middleManDecision) {
+							key = 'NO_RESPONSE'
+						} else if (val.pricingStatus === 'NOLENDERS' && !val.middleManDecision) {
+							key = 'NO_LENDERS'
+						} else if (/\bFICO\b/i.test(val.pricingMessage) && !val.middleManDecision) {
+							key = 'NO_FICO'
+						} else if (/\bSSN\b/i.test(val.pricingMessage) && !val.middleManDecision) {
+							key = 'INVALID_SSN'
+						} else {
+							key = 'OTHER'
+						}
+						o[key] = o[key] || [];
+						o[key].push(val);
+						return o;
+					}, {})
+				, decisions = statuses.SUCCESS
+					.reduce((o, s) => {
+						o[s.decision] = o[s.decision] || [];
+						o[s.decision].push(s);
+						return o;
+					}, {})
+				, decisionsPareto = Object.keys(decisions).map(d => {return {x: d, y: decisions[d].length}})
+				, unknowns = []
+				, reasonsByLoanAppId = {}
+				, reasons= decisions.DECLINED
+					.reduce((o, s) => {
+						var xml = s.middleManDecision
+							, reasons = xml.split('<B\:ConditionRejectionText>')
+								.filter(x => x.indexOf('</B:ConditionRejectionText>') > -1)
+								.map(x => x.split('</B:ConditionRejectionText>')[0].trim())
+						;
+						if(!reasons.length) {
+							reasons = xml.split('<B:DecisionComments>')
+								.filter(x => x.indexOf('</B:DecisionComments>') > -1)
+								.map(x => x.split('</B:DecisionComments>')[0].trim())
+								.map(x => {
+									return x.startsWith('LTV ') ? 'LTV' : x 
+								})
+						}
+						
+						if(!reasons.length) {
+							reasons = ['UNKNOWN']
+							unknowns.push(xml);
+						}
+						reasonsByLoanAppId[s.loanAppId] = reasons;
+						reasons.forEach(r => {
+							o[r] = o[r] || 0;
+							o[r]++;
+						})
+						return o;
+					}, {})
+				, reasonsPareto = Object.keys(reasons).map(r => {return {x: r, y: reasons[r]}})
+				, binnedReasonsMapping = {
+					"UNSATISFACTORY PRIOR CREDIT HISTORY- IN OUR JUDGMENT": "credit"
+					, "INSUFFICIENT PRIOR CREDIT HISTORY- IN OUR JUDGMENT": "credit"
+					, "INSUFFICIENT CREDIT HISTORY": "credit"
+					, "INSUFFICIENT SATISFACTORY CREDIT HISTORY": "credit"
+					, "LACK OF OR ESTIMATED COLLATERAL INSUFFICENT FOR CREDIT TERMS": "LTV"
+					, "LENGTH OF TIME ACCOUNTS HAVE BEEN ESTABLISHED": "credit"
+					, "INCOME IS INADEQUATE AS COMPARED TO ESTIMATED PAYMENT": "PTI"
+					, "NUMBER OF ACCOUNTS WITH RECENT DELINQUENCY": "credit"
+					, "ERROR_NO_RESPONSE": "Error"
+					, "UNABLE TO VERIFY THE VALIDITY OF THE SOCIAL SECURITY NUMBER": "Error"
+					, "INSUFFICIENT DOWN PAYMENT RELATED TO CONTRACT TERMS": "LTV"
+					, "EXCESSIVE DEBT FOR CREDIT TERMS REQUESTED": "credit"
+					, "TOO FEW REVOLVING ACCOUNTS PAID AS AGREED": "credit"
+					, "REPOSSESSION- FORECLOSURE- OR CHARGE OFF": "credit"
+					, "ERROR_INVALID_DATA": "Error"
+					, "PRIOR BANKRUPTCY": "credit"
+					, "Applicant-Credit unavailable on the terms requested": "credit"
+					, "ERROR_INVALID_ADDRESS": "Error"
+					, "ERROR_RETRY": "Error"
+					, "LTV": "LTV"
+				}
+				, dataDump = Object.keys(statuses).reduce((arr,status) => {
+					arr = arr.concat(statuses[status].map(l => {
+							var bookValue = l.bookValue || l.wholeSale || 'n/a'
+								, income = l.income === 9999999 ? 'n/a' : l.income
+								, amountFinanced = l.amountFinanced
+								, pmt = -1*calcPayment(0, 72, amountFinanced, 45, 360)
+								, ltv = bookValue === 'n/a' ? 'n/a' : amountFinanced / bookValue
+								, pti = isNaN(income) ? 'n/a' : pmt/income
+								, isSuccess = status === 'SUCCESS'
+								, isDeclined = l.decision === 'DECLINED'
+								, lender = l.lender || 'n/a'
+								, dealer = l.dealer ? dealerResponse[l.dealer] : 'n/a'
+							;
+							return {
+								reasons: isSuccess 
+									? (isDeclined ? reasonsByLoanAppId[l.loanAppId] : ['n/a'])
+									: [`ERROR_${status}`]
+								, decision: isSuccess ? l.decision : 'n/a'
+								, status: status
+								, dealer: dealer
+								, lender: lender.toUpperCase()
+								, income: income
+								, bookValue: bookValue
+								, amountFinanced: amountFinanced
+								, pti: pti
+								, ltv: ltv
+								, loanAppId: l.loanAppId
+							}
+						}));
+						return arr;
+					}, []).reduce((a, o) => {
+						a = a.concat(o.reasons.map(r => {
+							var reason = r.replace(/,/g, '-').replace(/\n/g, '->');
+							return {
+								loanAppId: o.loanAppId
+								, decision: o.decision
+								, status: o.status
+								, reason: reason
+								, bin: reason === 'n/a' 
+									? 'Decisioned' 
+									: (binnedReasonsMapping[reason] || 'Other') 
+								, dealer: o.dealer
+								, lender: o.lender
+								, income: o.income
+								, bookValue: o.bookValue
+								, amountFinanced: o.amountFinanced
+								, pti: o.pti
+								, ltv: o.ltv
+							}
+						}));
+						return a;								
+					}, [])
+				, header = ['Loan App Id', 'Decision', 'Status', 'Reason', 'Bin', 'Dealer', 'Lender', 'Income', 'Book Value', 'Amound Financed', 'PTI', 'LTV'].join(',')
+				, dataDumpCSV = header + '\n' + dataDump.reduce((a, o) => {
+						a.push([
+							o.loanAppId
+							, o.decision
+							, o.status
+							, o.reason
+							, o.bin
+							, o.dealer
+							, o.lender
+							, o.income
+							, o.bookValue
+							, o.amountFinanced
+							, o.pti
+							, o.ltv
+						].join(','));
+						return a;
+					}, []).join('\n')
+				, binnedReasons = dataDump.reduce((o, d) => {
+					o[d.bin] = o[d.bin] || 0;
+					o[d.bin]++;
+					return o;
+				}, {})
+				, binnedReasonsPareto = Object.keys(binnedReasons).map(r => {return {x: r, y: binnedReasons[r]}})
+				, invalidDataReasons = statuses['INVALID_DATA'].reduce((o, d) => {
+					var k;
+					try {
+						k = JSON.parse(d.pricingMessage).detail.faultdetails 
+					} catch(ex) {
+						k = d.pricingMessage;
+					}
+					o[k] = o[k] || 0;
+					o[k]++;
+					return o;
+				}, {})
+				, invalidDataReasonsPareto = Object.keys(invalidDataReasons).map(r => {return {x: r, y: invalidDataReasons[r]}})
+			; 
+
+			window.joinedData = joinedData;
+			var submits = {'SUBMITS': []}, submitErrors = {};
+			Object.keys(statuses).forEach(s => {
+				submits['SUBMITS'] = submits['SUBMITS'].concat(statuses[s]);
+				if(s === 'SUCCESS') return;
+				submitErrors[s] = statuses[s];
+			})
+			createTimePareto('Pareto of App Submit Statuses', submits, 30)
+			createTimePareto('Pareto of App Submit Errors', submitErrors, 30)
+			console.log('SUBMIT ERRORS', submitErrors);
+
+			console.log('DECISIONS', decisions);
+			createTimePareto('Pareto of Decisions', decisions, 30);
+
+			decisionsPareto.sort((a,b) => a.y < b.y ? 1 : -1)
+			var decisionData = [
+				 {
+				   x: decisionsPareto.map(d => d.x)
+				   , y:  decisionsPareto.map(d => d.y)
+				   , type: 'bar'
+				 }
+			   ];
+			document.querySelector('#decisions').style.display = 'block';
+			console.log('decisionData', decisionData)
+			Plotly.newPlot('decisionPlot', decisionData);
+
+			console.log('REASONS', reasons);
+			reasonsPareto.sort((a,b) => a.y < b.y ? 1 : -1)
+			var reasonData = [
+				 {
+				   x: reasonsPareto.map(d => d.x)
+				   , y:  reasonsPareto.map(d => d.y)
+				   , type: 'bar'
+				 }
+			   ];
+			document.querySelector('#reasons').style.display = 'block';
+			Plotly.newPlot('reasonsPlot', reasonData);
+
+			console.log('UNKNOWNS', unknowns);
+
+			console.log('BINNED REASONS', binnedReasons);
+			binnedReasonsPareto.sort((a,b) => a.y < b.y ? 1 : -1);
+			var binnedReasonData = [
+					 {
+					   x: binnedReasonsPareto.map(d => d.x)
+					   , y:  binnedReasonsPareto.map(d => d.y)
+					   , type: 'bar'
+					 }
+				   ]
+				, binnedReasonsPieData = [{
+					values: binnedReasonsPareto.map(d => d.y),
+					labels: binnedReasonsPareto.map(d => d.x),
+					type: 'pie'
+				}]
+				, layout = {
+					height: 400,
+					width: 500
+				}
+			;
+			document.querySelector('#binnedReasons').style.display = 'block';
+			Plotly.newPlot('binnedReasonsPlot', binnedReasonData);
+			Plotly.newPlot('binnedReasonsPie', binnedReasonsPieData, layout);
+
+
+			console.log('INVALID REASONS', invalidDataReasons);
+			invalidDataReasonsPareto.sort((a,b) => a.y < b.y ? 1 : -1)
+			var invalidData = [
+				 {
+				   x: invalidDataReasonsPareto.map(d => d.x)
+				   , y:  invalidDataReasonsPareto.map(d => d.y)
+				   , type: 'bar'
+				 }
+			   ];
+			document.querySelector('#invalidDataReasons').style.display = 'block';
+			Plotly.newPlot('invalidDataReasonsPlot', invalidData);
+
+			
+			console.log('DATA DUMP', dataDump);
+			window.csv = dataDumpCSV;
+		};
+
+		function renderInvalidVehicleData(err, resp) {
+			if(err) return log(err);
+			resp = JSON.parse(resp);
+
+			var invalidVehicleData = resp[0].map(r => {
+					r.dealerName = (resp[1].find(d => d._id === r.dealer) || {}).name;
+					r.dateCreated = new Date(r.dateCreated);
+					return r;
+				})
+				,invalidVehicleDataBins = invalidVehicleData.reduce((o, v) => {
+					o[v.dealerName] = o[v.dealerName] || [];
+					o[v.dealerName].push(v)
+					return o;
+				}, {})
+			;
+
+			console.log('Invalid Vehicle', invalidVehicleDataBins);
+			createTimePareto('Pareto of Invalid Vehicle by Dealer', invalidVehicleDataBins, 1)
+		};
+
+		function sendQuery() {
+			var endDate = new Date(document.querySelector('#end').value)
+				, startDate = new Date(document.querySelector('#start').value)
+			;
+
+			var path = 'http://localhost:3272/query' // 'http://bogoin.herokuapp.com/query'; 
+				, decisioningQuery = {
+					loanApplications: {
+						aggregate: [{
+							$match: {
+								'status.pricing': { $nin: ['NOTSUBMITTED', 'NONE', 'NOT SUBMITTED'] },
+								dateCreated: { $gte: startDate.toISOString(), $lte: endDate.toISOString() },
+								'applicant.email': { $nin: ['prodtest-1@autofi.io','prodtest-1@autofi.com'] },
+								backendPath: { $nin: ['SIMULATOR', 'LENDERTEST'] },
+								'applicant.isTestUser': { $not: { $eq: true } },
+								'trackingLabel.isTest': { $not: { $eq: true } },
+								'trackingLabel.isDuplicate': { $not: { $eq: true } },
+								'trackingLabel.isFake': { $not: { $eq: true } }
+							}
+						}, {
+							$project: {
+								pricingStatus: '$status.pricing',
+								pricingMessage: '$status.pricingMessage',
+								dealerTrack: { $arrayElemAt: ['$riskData.dealerTrack', -1] },
+								routeOne: { $arrayElemAt: ['$riskData.routeOne', -1] },
+								loanAppId: '$_id',
+								fmccStatus: '$integrations.decisions.FMCC.status',
+								hbanStatus: '$integrations.decisions.HBAN.status',
+								lafsStatus: '$integrations.decisions.LAFS.status',
+								fifsStatus: '$integrations.decisions.FIFS.status',
+								email: '$applicant.email',
+								backendPath: '$backendPath',
+								isTestUser: '$applicant.isTestUser',
+								isTest: '$trackingLabel.isTest',
+								isDuplicate: '$trackingLabel.isDuplicate',
+								isFake: '$trackingLabel.isFake',
+								dealer: '$dealer',
+								amountFinanced: '$loanInfo.amountFinanced',
+								income: '$applicant.incomeReported',
+								bookValue: '$vehicle.bookValue',
+								wholeSale: '$vehicle.wholeSale',
+								dateCreated: '$dateCreated'
+
+							}
+						}],
+						lean: null
+					},
+					decisions: {
+						aggregate: [{
+							$match: {
+								startDate: { $gte: startDate.toISOString(), $lt: endDate.toISOString() }
+								, message: {$nin: ['Demo']}
+							}
+						}, {
+							$project: {
+								decision: '$decision',
+								loanAppId: '$loanApp',
+								decisionError: '$error',
+								decisionStatus: '$status',
+								decisionMessage: '$message',
+								dateCreated: '$startDate'
+							}
+						}],
+						lean: null
+					},
+					dealers: {
+						find: {}
+						, select: 'name'
+						, lean: null
+					},
+					decrypt: { keys: ['routeOne.decision', 'dealerTrack.decision'] }
+				}
+				, bookoutQuery = {
+					loanApplications: {
+						aggregate: [{
+							$match: {
+								dateCreated: { $gte: startDate.toISOString(), $lte: endDate.toISOString() },
+								'vehicle.status': 'INVALIDVEHICLE',
+								'applicant.email': { $nin: ['prodtest-1@autofi.io','prodtest-1@autofi.com'] },
+								backendPath: { $nin: ['SIMULATOR', 'LENDERTEST'] },
+								'applicant.isTestUser': { $not: { $eq: true } },
+								'trackingLabel.isTest': { $not: { $eq: true } },
+								'trackingLabel.isDuplicate': { $not: { $eq: true } },
+								'trackingLabel.isFake': { $not: { $eq: true } }
+							}
+						}, {
+							$project: {
+								loanAppId: '$_id',
+								email: '$applicant.email',
+								backendPath: '$backendPath',
+								isTestUser: '$applicant.isTestUser',
+								isTest: '$trackingLabel.isTest',
+								isDuplicate: '$trackingLabel.isDuplicate',
+								isFake: '$trackingLabel.isFake',
+								dealer: '$dealer',
+								dateCreated: '$dateCreated'
+							}
+						}]
+					}
+					, dealers: {
+						find: {}
+						, select: 'name'
+						, lean: null
+					}
+				}
+
+			window.restfull.post(
+				{ path: path, data: decisioningQuery, headers: { secret: localStorage.reporterSecret } }
+				, function(err, resp) {
+					if(err) return log(err);
+					renderDashboard(null, resp);
+					window.restfull.post(
+						{ path: path, data: bookoutQuery, headers: { secret: localStorage.reporterSecret } }
+						, renderInvalidVehicleData
+					);
+				}
+			); 
+		}
+
+		setDateRange();
+		document.querySelector('#run').addEventListener('click', sendQuery);
+
+	</script>
+</body>
+
+</html>

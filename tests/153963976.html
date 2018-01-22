@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>Test</title>
+	<style>
+		* {
+			font-family: Arial;
+		}
+
+		body {
+			background-color: #232323;
+			color: #EFEFEF;
+		}
+
+		label, input, button {
+			display:block;
+			margin:0.5em;
+		}
+
+		button {
+			font-size:1.15em;
+		}
+
+		.pass {
+			font-weight:bold;
+			font-size:40px;
+			color: green;
+		}
+
+		.fail {
+			font-weight:bold;
+			font-size:40px;
+			color: red;
+		}
+
+	</style>
+ 	<script src="https://autofi-testing.herokuapp.com/plotly.js"></script>
+	<script src="https://autofi-testing.herokuapp.com/libs/restfull.js"></script>
+</head>
+
+<body>
+	<header>
+		<h1>Test</h1>
+		<div>
+			<h2>Verify pricingenv works as designed</h2>
+			<div><a href='https://www.pivotaltracker.com/story/show/153963976'>https://www.pivotaltracker.com/story/show/153963976</a></div>
+			<p>
+				See: <a href='https://docs.google.com/spreadsheets/d/1c_cMVlSnRTSWDIWz3JzzAL4XkLUqWO-TnIrcDtlCaEI/edit#gid=1755531133'>https://docs.google.com/spreadsheets/d/1c_cMVlSnRTSWDIWz3JzzAL4XkLUqWO-TnIrcDtlCaEI/edit#gid=1755531133</a>
+			</p>
+		</div>
+	</header>
+	<section>
+		<h2>Are the settings collections all created correctly?</h2>
+		<h3>Local</h3>
+		<table id='localSettingCollectionResults'></table>
+		<h3>Staging</h3>
+		<table id='stagingSettingCollectionResults'></table>
+		<h3>Production</h3>
+		<table id='productionSettingCollectionResults'></table>
+		<script>
+			var settings = [
+					'SIMULATOR', 'DEALERTEST', 'LENDERTEST', 'Active'
+				]
+				, environments = [
+					'local', 'staging', 'production'
+				]
+			;
+			environments.forEach(e => {
+				settings.forEach(s => {
+					var path = 'http://localhost:3272/query'
+						, query = {
+							environment: e
+							, settings: {
+								find: {name: s}
+								, lean: null
+							}
+						};
+					window.restfull.post(
+						{ path: path, data: query, headers: { secret: localStorage.reporterSecret } }
+						, function(err, resp) {
+							if(err) return console.log(e, s, err);
+							console.log(e, s, resp);
+						}
+					); 
+				});
+			});
+		</script>
+	</section>
+</body>
+
+</html>

@@ -12,10 +12,13 @@
   "author": "Moollihawkja",
   "license": "ISC",
   "dependencies": {
+    "@autofidev/models": "^3.0.2",
+    "@autofidev/panda-models": "*",
     "async": "^2.6.0",
     "body-parser": "^1.18.2",
     "cors": "^2.8.4",
     "express": "^4.16.2",
-    "lodash": "^4.17.4"
+    "lodash": "^4.17.4",
+    "mongoose": "^4.11.14"
   }
 }

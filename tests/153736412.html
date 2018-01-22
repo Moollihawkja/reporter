@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>Test</title>
+	<style>
+		* {
+			font-family: Arial;
+		}
+
+		body {
+			background-color: #232323;
+			color: #EFEFEF;
+		}
+
+		label, input, button {
+			display:block;
+			margin:0.5em;
+		}
+
+		button {
+			font-size:1.15em;
+		}
+
+		.pass {
+			font-weight:bold;
+			font-size:40px;
+			color: green;
+		}
+
+		.fail {
+			font-weight:bold;
+			font-size:40px;
+			color: red;
+		}
+
+	</style>
+ 	<script src="http://nether.space/plotly.js"></script>
+	<script src="http://nether.space/libs/restfull.js"></script>
+</head>
+
+<body>
+	<header>
+		<h1>Test</h1>
+		<div>
+			<h2>Monthly income should have a cap on it since RouteOne complains of anything > $99,999</h2>
+			<div><a href='https://www.pivotaltracker.com/story/show/153736412'>https://www.pivotaltracker.com/story/show/153736412</a></div>
+			<p>
+				```
+				{faultdetails=Field Name:GrossIncome, Error Description:Invalid Data - Cannot exceed $99,999 |}
+				```
+
+				See: https://app.opsgenie.com/alert/V2#/show/03ba3af7-4a68-4b30-a5d0-30678b78b655/details
+			</p>
+		</div>
+	</header>
+	<section>
+		<h1>Results</h1>
+		<h2 id='results'></h2>
+	</section>
+	<script type="text/javascript">
+			var DEFAULT_DATE_RANGE = 5
+				, endDate = new Date()
+				, startDate = new Date()
+				, path = 'http://localhost:3272/query' // 'http://bogoin.herokuapp.com/query'; 
+				, query
+				, results
+			;
+			
+			function setDateRange() {
+				startDate.setDate(startDate.getDate() - DEFAULT_DATE_RANGE);	
+				endDate.setDate(endDate.getDate() + 1);		
+			}
+
+			function setQuery() {
+				query = {
+						loanApplications: {
+							aggregate: [{
+								$match: {
+									'status.pricing': { $nin: ['NOTSUBMITTED', 'NONE', 'NOT SUBMITTED'] },
+									dateCreated: { $gte: startDate.toISOString(), $lt: endDate.toISOString() },
+								}
+							}, {
+								$project: {
+									pricingStatus: '$status.pricing',
+									pricingMessage: '$status.pricingMessage',
+									applicantState: '$applicant.address.state',
+									coapplicantState: '$cosigner.applicant.address.state',
+									appDriversLicense: '$applicant.driversLicense.state',
+									coappDriversLicense: '$cosigner.applicant.driversLicense.state',
+									dealerTrack: { $arrayElemAt: ['$riskData.dealerTrack', -1] },
+									routeOne: { $arrayElemAt: ['$riskData.routeOne', -1] },
+									loanAppId: '$_id',
+									fmccStatus: '$integrations.decisions.FMCC.status',
+									hbanStatus: '$integrations.decisions.HBAN.status',
+									lafsStatus: '$integrations.decisions.LAFS.status',
+									fifsStatus: '$integrations.decisions.FIFS.status',
+									email: '$applicant.email',
+									backendPath: '$backendPath',
+									isTestUser: '$applicant.isTestUser',
+									isTest: '$trackingLabel.isTest',
+									isDuplicate: '$trackingLabel.isDuplicate',
+									isFake: '$trackingLabel.isFake',
+									dealer: '$dealer',
+									amountFinanced: '$loanInfo.amountFinanced',
+									income: '$applicant.incomeReported',
+									bookValue: '$vehicle.bookValue',
+									wholeSale: '$vehicle.wholeSale',
+									dateCreated: '$dateCreated'
+
+								}
+							}],
+							lean: null
+						},
+						decisions: {
+							aggregate: [{
+								$match: {
+									startDate: { $gte: startDate.toISOString(), $lt: endDate.toISOString() }
+									, message: {$nin: ['Demo']}
+								}
+							}, {
+								$project: {
+									decision: '$decision',
+									loanAppId: '$loanApp',
+									decisionError: '$error',
+									decisionStatus: '$status',
+									decisionMessage: '$message',
+									dateCreated: '$startDate'
+								}
+							}],
+							lean: null
+						}
+					};
+			}
+
+			function sendQuery() {
+				window.restfull.post(
+					{ path: path, data: query, headers: { secret: localStorage.reporterSecret } }
+					, analyzeResults
+				); 				
+			}
+
+			function analyzeResults(err, resp) {
+				if (err) {
+					return log(err);
+				}
+				resp = JSON.parse(resp);
+				
+				var aggResponses = [resp[0], resp[1]]
+					, joinedData = resp
+						.reduce((o, arr) => {
+							return arr
+								.map(r => {
+									var n = {};
+									Object.keys(r).forEach(k => {
+										if (['routeOne', 'dealerTrack'].indexOf(k) > -1) {
+											if (!r[k]) return;
+											n.middleMan = k;
+											n.middleManStatus = r[k].status;
+											n.middleManDecision = r[k].decision;
+											return;
+										}
+										if (/^[a-z]{4}Status$/.test(k)) {
+											var lender = k.match(/^([a-z]{4})Status$/)[1],
+												isNoResponse = r[k] === 'NO RESPONSE';
+											n.lender = lender;
+											n.isNoResponse = isNoResponse;
+										}
+										if(k === 'dateCreated') {
+											return n[k] = new Date(r[k]);
+										}
+										n[k] = r[k];
+									});
+									return n;
+								})
+								.reduce((i, r) => {
+									i[r.loanAppId] = i[r.loanAppId] || {};
+									Object.assign(i[r.loanAppId], r);
+									return i;
+								}, o)
+						}, {})
+					, statuses = Object.keys(joinedData)
+						.reduce((o, k) => {
+							var val = joinedData[k],
+								key;
+							if(val.loanAppId === '5a35b3932c4e8300043582c0') console.log(val);
+							if(!val.pricingStatus) return o;
+							if(/@autofi\./i.test(val.email)) return o;
+							if (val.middleManStatus === 'R') {
+								key = 'RETRY'
+							} else if (val.pricingStatus === 'INPROGRESS' && ['A', 'D', 'O', 'OT'].indexOf(val.middleManStatus) > -1) {
+								key = 'DECISION_MISSED'
+							} else if (val.isNoResponse || val.decisionError === 'No response') {
+								key = 'NO_RESPONSE'
+							} else if (val.decisionMessage === 'Demo') {
+								key = 'DEMO'
+							} else if (/There was a problem calculating taxes for your address/.test(val.pricingMessage)) {
+								key = 'INVALID_ADDRESS'
+							} else if (val.middleManStatus === 'Client.invalidData') {
+								key = 'INVALID_DATA'
+							} else if (val.decisionStatus === 'COMPLETED' && ['A', 'D', 'O', 'OT'].indexOf(val.middleManStatus) > -1) {
+								key = 'SUCCESS'
+							} else if (val.pricingStatus === 'INPROGRESS' && !val.middleManDecision) {
+								key = 'NO_RESPONSE'
+							} else if (val.pricingStatus === 'NOLENDERS' && !val.middleManDecision) {
+								key = 'NO_LENDERS'
+							} else if (/\bFICO\b/i.test(val.pricingMessage) && !val.middleManDecision) {
+								key = 'NO_FICO'
+							} else if (/\bSSN\b/i.test(val.pricingMessage) && !val.middleManDecision) {
+								key = 'INVALID_SSN'
+							} else {
+								key = 'OTHER'
+							}
+							o[key] = o[key] || [];
+							o[key].push(val);
+
+							return o;
+						}, {})
+					, invalidDataReasons = (statuses['INVALID_DATA'] || []).reduce((o, d) => {
+						var k;
+						try {
+							k = JSON.parse(d.pricingMessage).detail.faultdetails 
+						} catch(ex) {
+							k = d.pricingMessage;
+						}
+						o[k] = o[k] || [];
+						o[k].push(d);
+						return o;
+					}, {})
+					, invalidIncome = Object.keys(invalidDataReasons)
+						.reduce((a, k) => {
+							if(k.indexOf('$99,999') === -1) return a;
+							var validReasons = invalidDataReasons[k];
+							a = a.concat(validReasons);
+							return a;
+						}, [])
+					, result = invalidIncome.length ? '<h3 class="fail">FAIL</h3>' : '<h3 class="pass">PASS</h3>'
+					, raw = invalidIncome.length ? `<code><pre>${JSON.stringify(invalidIncome, null, '\t')}</pre></code>` : ''
+				document.querySelector('#results').innerHTML = [result, raw].join('\n');
+				console.log('RAW DATA', statuses);
+			}
+
+			setDateRange();
+			setQuery();
+			sendQuery();
+
+	</script>
+
+	
+	<section style='display:none'>
+		<div>
+			<h2>Choose the date range</h2>
+			<div id='dateRange'>
+				<label>Start Date:</label>
+				<input type='text' id='start'/>
+				<label>End Date:</label>
+				<input type='text' id='end'/>
+				<button id='run'>Run</button>
+			</div>
+		</div>
+		<div id='plots'></div>
+		<div id='decisions' style='display:none'>
+			<h2>Pareto of App Submit Decisions</h2>
+			<div id='decisionPlot'></div>
+		</div>
+		<div id='reasons' style='display:none'>
+			<h2>Pareto of App Decline Reasons</h2>
+			<div id='reasonsPlot'></div>
+		</div>
+		<div id='binnedReasons' style='display:none'>
+			<h2>Binned Decline Reasons and Errors</h2>
+			<div id='binnedReasonsPlot'></div>
+			<div id='binnedReasonsPie'></div>
+		</div>
+		<div id='invalidDataReasons' style='display:none'>
+			<h2>Pareto of Invalid Data Reasons</h2>
+			<div id='invalidDataReasonsPlot'></div>
+		</div>
+	</section>
+</body>
+
+</html>
