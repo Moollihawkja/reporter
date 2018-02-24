@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>Test</title>
+	<style>
+		* {
+			font-family: Arial;
+		}
+
+		body {
+			background-color: #232323;
+			color: #EFEFEF;
+		}
+
+		label, input, button {
+			display:block;
+			margin:0.5em;
+		}
+
+		button {
+			font-size:1.15em;
+		}
+
+		.pass {
+			font-weight:bold;
+			color: green;
+		}
+
+		.fail {
+			font-weight:bold;
+			color: red;
+		}
+
+		table thead tr {
+			background-color: #696969;
+		}
+
+		table tr:nth-child(even) {
+			background-color: #464646;
+		}
+
+		pre {
+			font-family:"Courier New", Courier, monospace;
+		}
+
+	</style>
+	<script src="https://autofi-testing.herokuapp.com/libs/restfull.js"></script>
+</head>
+
+<body>
+	<header>
+		<h1>Settings Check</h1>
+		<div>
+			<p>Verify that all the settings are what they are supposed to be</p>
+		</div>
+	</header>
+	<section>
+		<h2>Are the settings collections all created correctly?</h2>
+		<div id='settingCollectionResults'></div>
+		<script>
+			function get(o, k) {
+				var keys = k.split('.')
+					, res = o;
+				while(keys.length) {
+					if(!res) return res;
+					res = res[keys.shift()];
+				}
+				return res;
+			}
+			function getRows(env) {
+				return settingPaths.reduce((a, s, i) => {
+						var setting =  '<tr>' + settings[env][settingNames[i-1]] ? settings[env][settingNames[i-1]][s] : 'n/a';
+						a += '<td>' + (i ? setting : s) + '</td>'
+						return a;
+					}, '')+ '</tr>';
+			}
+			var settingPaths = [
+					'kbb.requestUrl'
+					, 'kbb.endPointUrl'
+					, 'kbb.wsdlUrl'
+					, 'vids.url'
+					, 'vids.proxy'
+					, 'nada.vehicleServiceUrl'
+					, 'nada.secureLoginUrl'
+					, 'blackbook.url'
+					, 'jmfamily.setApi.endpointUrl'
+					, 'jmfamily.wofco.vinEndpointUrl'
+					, 'jmfamily.quickQuote.endpointUrl'
+					, 'fiExpress.url'
+					, 'routeOne.routeoneUrl'
+					, 'dealertrack.host'
+					, 'dms.url'
+					, 'vertex.VERTEX_URL'
+				]
+				, settingUrls = {
+					'kbb.requestUrl': {
+						real: {local: 'https://idws-sample.syndication.kbb.com/3.0/vehicleinformationservice2008r2.svc/Soap11',staging: 'https://idws-sample.syndication.kbb.com/3.0/vehicleinformationservice2008r2.svc/Soap11', production: 'https://idws.syndication.kbb.com/3.0/VehicleInformationService2008R2.svc/Soap11'}
+					}
+					, 'kbb.endPointUrl': {
+						real: {local: 'http://www.kbb.com/2011/01/25/VehicleInformationService/IVehicleInformationService2008R2/', staging: 'http://www.kbb.com/2011/01/25/VehicleInformationService/IVehicleInformationService2008R2/', production: 'http://www.kbb.com/2011/01/25/VehicleInformationService/IVehicleInformationService2008R2/'}
+					}
+					, 'kbb.wsdlUrl': {
+						real: { local: 'https://idws-sample.syndication.kbb.com/3.0/vehicleinformationservice2008r2.svc?wsdl', staging: 'https://idws-sample.syndication.kbb.com/3.0/vehicleinformationservice2008r2.svc?wsdl', production: 'https://idws.syndication.kbb.com/3.0/VehicleInformationService2008R2.svc?wsdl'}
+					}
+					, 'vids.url': {
+						sim: {local: 'http://localhost:3002/vids', staging: 'https://autofi-sim-test.herokuapp.com/vids', production: 'https://autofi-sim.herokuapp.com/vids'}
+						, real: {local: 'https://www.vids.dealerconnection.com', staging: 'https://www.vids.dealerconnection.com', production: 'https://www.vids.dealerconnection.com'}
+					}
+					, 'vids.proxy': {
+						sim: {local: '', staging: '', production: ''}
+						, real: {local: 'http://ynppsqbyqvriplnnzlhazdoh:e5uYk0uO@ec2-54-89-16-176.compute-1.amazonaws.com:2999', staging: 'http://ynppsqbyqvriplnnzlhazdoh:e5uYk0uO@ec2-54-89-16-176.compute-1.amazonaws.com:2999', production: 'http://ynppsqbyqvriplnnzlhazdoh:e5uYk0uO@ec2-54-89-16-176.compute-1.amazonaws.com:2999'}
+					}
+					, 'nada.vehicleServiceUrl': {
+						sim: {local: 'http://localhost:3002/nadaVehicleService', staging: 'https://autofi-sim-test.herokuapp.com/nadaVehicleService', production: 'https://autofi-sim.herokuapp.com/nadaVehicleService'}
+						, real: {local: 'http://localhost:3002/nadaVehicleService', staging: 'https://autofi-sim-test.herokuapp.com/nadaVehicleService', production: 'http://webservice.nada.com/vehicles/vehicle.asmx'}
+					}
+					, 'nada.secureLoginUrl': {
+						sim: {local: 'http://localhost:3002/nadaSecureLogin', staging: 'https://autofi-sim-test.herokuapp.com/nadaSecureLogin', production: 'https://autofi-sim.herokuapp.com/nadaSecureLogin'}
+						, real: {local: 'http://localhost:3002/nadaSecureLogin', staging: 'https://autofi-sim-test.herokuapp.com/nadaSecureLogin', production: 'https://webservice.nada.com/vehicles/secure/securelogin.asmx'}
+					}
+					, 'blackbook.url': {
+						sim: {local: 'http://localhost:3002/blackbook', staging: 'https://autofi-sim-test.herokuapp.com/blackbook', production: 'https://autofi-sim.herokuapp.com/blackbook'}
+						, real: {local: 'http://localhost:3002/blackbook', staging: 'https://autofi-sim-test.herokuapp.com/blackbook', production: 'https://service.blackbookcloud.com/UsedCarWS/UsedCarWS'}
+					}
+					, 'jmfamily.setApi.endpointUrl': {
+						sim: {local: 'http://localhost:3002/jmfset', staging: 'https://autofi-sim-test.herokuapp.com/jmfset', production: 'https://autofi-sim.herokuapp.com/jmfset'}
+						, real: {local: 'http://localhost:3002/jmfset', staging: 'https://api.set.alloy.services/v1/offers', production: 'https://api.set.alloy.services/v1/offers'}
+						, lender: {local: 'https://api.set.alloy.services/v1/offers', staging: 'https://api.set.alloy.services/v1/offers', production: 'https://api.set.alloy.services/v1/offers'}
+					}
+					, 'jmfamily.wofco.vinEndpointUrl': {
+						sim: {local: 'http://localhost:3002/jmfvin', staging: 'https://autofi-sim-test.herokuapp.com/jmfvin', production: 'https://autofi-sim.herokuapp.com/jmfvin'}
+						, real: {local: 'http://localhost:3002/jmfvin', staging: 'https://dp-wofco-vinlookupsvcstg.jmfamily.com/JMFAMILY.ENT.ESB/VehicleService.svc', production: 'https://dp-wofco-vinlookupsvc.jmfamily.com/JMFAMILY.ENT.ESB/VehicleService.svc'}
+						, lender: {local: 'https://dp-wofco-vinlookupsvcstg.jmfamily.com/JMFAMILY.ENT.ESB/VehicleService.svc', staging: 'https://dp-wofco-vinlookupsvcstg.jmfamily.com/JMFAMILY.ENT.ESB/VehicleService.svc', production: 'https://dp-wofco-vinlookupsvc.jmfamily.com/JMFAMILY.ENT.ESB/VehicleService.svc'}
+					}
+					, 'jmfamily.quickQuote.endpointUrl': {
+						sim: {local: 'http://localhost:3002/quickQuote', staging: 'https://autofi-sim-test.herokuapp.com/quickQuote', production: 'https://autofi-sim.herokuapp.com/quickQuote'}
+						, real: {local: 'http://localhost:3002/quickQuote', staging: 'https://dp-wofco-qqproxyapistg.jmfamily.com/api/quotes', production: 'https://dp-wofco-qqproxyapi.jmfamily.com/api/quotes'}
+						, lender: {local: 'https://dp-wofco-qqproxyapistg.jmfamily.com/api/quotes', staging: 'https://dp-wofco-qqproxyapistg.jmfamily.com/api/quotes', production: 'https://dp-wofco-qqproxyapi.jmfamily.com/api/quotes'}
+					}
+					, 'fiExpress.url': {
+						sim: {local: 'http://localhost:3002/fiexpress', staging: 'https://autofi-sim-test.herokuapp.com/fiexpress', production: 'https://autofi-sim.herokuapp.com/fiexpress'}
+						, real: {local: 'https://fandiexpress.com/webapp/dspapi_versions/5.3/dspapi', staging: 'https://fandiexpress.com/webapp/dspapi_versions/5.3/dspapi', production: 'https://fandiexpress.com/webapp/dspapi_versions/5.3/dspapi'}
+					}
+					, 'routeOne.routeoneUrl': {
+						sim: {local: 'http://localhost:3002/routeone', staging: 'https://autofi-sim-test.herokuapp.com/routeone', production: 'https://autofi-sim.herokuapp.com/routeone'}
+						, real: {local: 'http://localhost:3002/routeone', staging: 'https://autofi-sim-test.herokuapp.com/routeone', production: 'https://messaging.routeone.net/IF1_PROD/CASSBMessagingReceiver'}
+						, lender: {local: 'https://testint.r1dev.com/IF1_TSTINT/CASSBMessagingReceiver', staging: 'https://testint.r1dev.com/IF1_TSTINT/CASSBMessagingReceiver', production: 'https://testint.r1dev.com/IF1_TSTINT/CASSBMessagingReceiver'}
+					}
+					, 'dealertrack.host': {
+						sim: {local: 'http://localhost:3002', staging: 'https://autofi-sim-test.herokuapp.com', production: 'https://autofi-sim.herokuapp.com'}
+						, real: {local: 'http://localhost:3002', staging: 'https://autofi-sim-test.herokuapp.com', production: 'https://webservices.dealertrack.com'}
+						, lender: {local: 'https://webservices.uat1.dealertrack.com', staging: 'https://webservices.uat1.dealertrack.com', production: 'https://webservices.uat1.dealertrack.com'}
+					}
+					, 'dms.url': {
+						sim: {local: 'http://localhost:3002/dms', staging: 'https://autofi-sim-test.herokuapp.com/dms', production: 'https://autofi-sim.herokuapp.com/dms'}
+						, real: {local: 'http://localhost:3002/dms', staging: 'https://autofi-sim-test.herokuapp.com/dms', production: 'https://ws.dmsecredit.com/wscom3/dmswsi001.asmx'}
+					}	
+					, 'vertex.VERTEX_URL': {
+						sim: {local: '', staging: '', production: ''}
+						, real: {local: 'https://autofi.ondemand.vertexinc.com:443/vertex-ws/services/CalculateTax70', staging: 'https://autofi.ondemand.vertexinc.com:443/vertex-ws/services/CalculateTax70', production: 'https://autofi.ondemand.vertexinc.com:443/vertex-ws/services/CalculateTax70'}
+					}			
+				}
+				, expectedSetting = {
+					SIMULATOR: {
+						'kbb.requestUrl': 'real'
+						, 'kbb.endPointUrl': 'real'
+						, 'kbb.wsdlUrl': 'real'
+						, 'vids.url': 'sim'
+						, 'vids.proxy': 'sim'
+						, 'nada.vehicleServiceUrl': 'sim'
+						, 'nada.secureLoginUrl': 'sim'
+						, 'blackbook.url': 'sim'
+						, 'jmfamily.setApi.endpointUrl': 'sim'
+						, 'jmfamily.wofco.vinEndpointUrl': 'sim'
+						, 'jmfamily.quickQuote.endpointUrl': 'sim'
+						, 'fiExpress.url': 'sim'
+						, 'routeOne.routeoneUrl' : 'sim'
+						, 'dealertrack.host': 'sim'
+						, 'dms.url': 'sim'
+						, 'vertex.VERTEX_URL': 'sim'
+					}
+					, DEALERTEST: {
+						'kbb.requestUrl': 'real'
+						, 'kbb.endPointUrl': 'real'
+						, 'kbb.wsdlUrl': 'real'
+						, 'vids.url': 'real'
+						, 'vids.proxy': 'real'
+						, 'nada.vehicleServiceUrl': 'real'
+						, 'nada.secureLoginUrl': 'real'
+						, 'blackbook.url': 'real'
+						, 'jmfamily.setApi.endpointUrl': 'real'
+						, 'jmfamily.wofco.vinEndpointUrl': 'real'
+						, 'jmfamily.quickQuote.endpointUrl': 'sim'
+						, 'fiExpress.url': 'real'
+						, 'routeOne.routeoneUrl': 'sim'
+						, 'dealertrack.host': 'sim'
+						, 'dms.url': 'sim'
+						, 'vertex.VERTEX_URL': 'real'
+					}
+					, LENDERTEST: {
+						'kbb.requestUrl': 'real'
+						, 'kbb.endPointUrl': 'real'
+						, 'kbb.wsdlUrl': 'real'
+						, 'vids.url': 'real'
+						, 'vids.proxy': 'real'
+						, 'nada.vehicleServiceUrl': 'real'
+						, 'nada.secureLoginUrl': 'real'
+						, 'blackbook.url': 'real'
+						, 'jmfamily.setApi.endpointUrl': 'lender'
+						, 'jmfamily.wofco.vinEndpointUrl': 'lender'
+						, 'jmfamily.quickQuote.endpointUrl': 'lender'
+						, 'fiExpress.url': 'real'
+						, 'routeOne.routeoneUrl': 'lender'
+						, 'dealertrack.host': 'lender'
+						, 'dms.url': 'sim'
+						, 'vertex.VERTEX_URL': 'real'
+					}
+					, Active: {
+						'kbb.requestUrl': 'real'
+						, 'kbb.endPointUrl': 'real'
+						, 'kbb.wsdlUrl': 'real'
+						, 'vids.url': 'real'
+						, 'vids.proxy': 'real'
+						, 'nada.vehicleServiceUrl': 'real'
+						, 'nada.secureLoginUrl': 'real'
+						, 'blackbook.url': 'real'
+						, 'jmfamily.setApi.endpointUrl': 'real'
+						, 'jmfamily.wofco.vinEndpointUrl': 'real'
+						, 'jmfamily.quickQuote.endpointUrl': 'real'
+						, 'fiExpress.url': 'real'
+						, 'routeOne.routeoneUrl': 'real'
+						, 'dealertrack.host': 'real'
+						, 'dms.url': 'real'
+						, 'vertex.VERTEX_URL': 'real'
+					}
+				}
+				,query = {
+					settings: {
+						find: {}
+						, select: settingPaths.reduce((a, s) => {a.push(s); return a;}, ['name'])
+						, lean: null
+					}
+				}
+				settingNames = [
+					'SIMULATOR', 'DEALERTEST', 'LENDERTEST', 'Active'
+				]
+				, paths = [{env: 'local', port: 3270}, {env: 'staging', port: 3271}, {env: 'production', port: 3272}]
+			;
+
+			function getExpected(actual, name, path, env) {
+				var exSetting = expectedSetting[name][path]
+				return settingUrls[path][exSetting][env];
+			}
+
+			paths.forEach(path => {
+				var $table = document.createElement('table')
+					, $h3 = document.createElement('h3')
+					, $results = document.querySelector('#settingCollectionResults')
+					, env = path.env
+				;
+				$table.id = `${env}SettingCollectionResults`
+				$h3.innerText = env.toUpperCase();
+				$results.appendChild($h3);
+				$results.appendChild($table);
+				window.restfull.post(
+					{ path: `http://localhost:${path.port}/query`, data: query, headers: { secret: localStorage.reporterSecret } }
+					, function(err, resp) {
+						if(err) $table.innerHTML = `<tr><td>${err}</td></tr>`;
+						var parsedSettings = JSON.parse(resp)[0]
+							, setting = settingNames.reduce((s, n) => {
+									var parsedSetting = parsedSettings.find(s => s.name === n);
+									s[n] = parsedSetting 
+											? settingPaths.reduce((j, p) => {
+												j[p] = get(parsedSetting, p);
+												return j;
+											}, {})
+											: {}
+									return s;
+								}, {})
+							, headerRow = `<thead><tr><th>Setting</th><th>${settingNames.join('</th><th>')}</th></tr></thead>`
+							, rows = '';
+						;
+
+						settingPaths.forEach(path => {
+						 	var cells = settingNames.map(name => {
+								var actual = setting[name][path] || ''
+							 		, expected = getExpected(actual, name, path, env)
+							 		, result = actual === expected ? 'pass' : 'fail'
+							 	;
+						 	 	return `<td class=${result} expected=${expected}>${actual}</td>`;
+						 	});
+						 	rows += `<tr><td>${path}</td>${cells.join('')}</tr>`
+						})
+						$table.innerHTML = headerRow + '<tbody>' + rows + '</tbody>';
+					}
+				); 				
+			})
+
+		</script>
+	</section>
+</body>
+
+</html>

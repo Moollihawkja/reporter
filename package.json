@@ -4,7 +4,9 @@
   "description": "A client side reporting tool",
   "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "local": "nodemon ./app.js local --ext 'js,json,pug' --verbose",
+    "staging": "nodemon ./app.js staging --ext 'js,json,pug' --verbose",
+    "production": "nodemon ./app.js production --ext 'js,json,pug' --verbose"
   },
   "keywords": [
     "reporting"
@@ -12,7 +14,7 @@
   "author": "Moollihawkja",
   "license": "ISC",
   "dependencies": {
-    "@autofidev/models": "^3.0.2",
+    "@autofidev/models": "*",
     "@autofidev/panda-models": "*",
     "async": "^2.6.0",
     "body-parser": "^1.18.2",

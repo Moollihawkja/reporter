@@ -34,8 +34,19 @@
 			color: red;
 		}
 
+		table thead tr {
+			background-color: #696969;
+		}
+
+		table tr:nth-child(even) {
+			background-color: #464646;
+		}
+
+		pre {
+			font-family:"Courier New", Courier, monospace;
+		}
+
 	</style>
- 	<script src="https://autofi-testing.herokuapp.com/plotly.js"></script>
 	<script src="https://autofi-testing.herokuapp.com/libs/restfull.js"></script>
 </head>
 
@@ -52,40 +63,159 @@
 	</header>
 	<section>
 		<h2>Are the settings collections all created correctly?</h2>
-		<h3>Local</h3>
-		<table id='localSettingCollectionResults'></table>
-		<h3>Staging</h3>
-		<table id='stagingSettingCollectionResults'></table>
-		<h3>Production</h3>
-		<table id='productionSettingCollectionResults'></table>
+		<div id='settingCollectionResults'></div>
 		<script>
-			var settings = [
+			function get(o, k) {
+				var keys = k.split('.')
+					, res = o;
+				while(keys.length) {
+					if(!res) return res;
+					res = res[keys.shift()];
+				}
+				return res;
+			}
+			function getRows(env) {
+				return settingPaths.reduce((a, s, i) => {
+						var setting =  '<tr>' + settings[env][settingNames[i-1]] ? settings[env][settingNames[i-1]][s] : 'n/a';
+						a += '<td>' + (i ? setting : s) + '</td>'
+						return a;
+					}, '')+ '</tr>';
+			}
+			var settingPaths = [
+					'kbb.requestUrl'
+					, 'nada.vehicleServiceUrl'
+					, 'blackbook.url'
+					, 'jmfamily.setApi.endpointUrl'
+					, 'fiExpress.url'
+					, 'routeOne.routeoneUrl'
+					, 'dealertrack.host'
+					, 'dms.url'
+				]
+				,query = {
+					settings: {
+						find: {}
+						, select: settingPaths
+						, lean: null
+					}
+				}
+				settingNames = [
 					'SIMULATOR', 'DEALERTEST', 'LENDERTEST', 'Active'
 				]
-				, environments = [
-					'local', 'staging', 'production'
-				]
+				, paths = [{env: 'local', port: 3270}, {env: 'staging', port: 3271}, {env: 'production', port: 3272}]
 			;
-			environments.forEach(e => {
-				settings.forEach(s => {
-					var path = 'http://localhost:3272/query'
-						, query = {
-							environment: e
-							, settings: {
-								find: {name: s}
-								, lean: null
-							}
-						};
-					window.restfull.post(
-						{ path: path, data: query, headers: { secret: localStorage.reporterSecret } }
-						, function(err, resp) {
-							if(err) return console.log(e, s, err);
-							console.log(e, s, resp);
-						}
-					); 
-				});
-			});
+			paths.forEach(path => {
+				var $table = document.createElement('table')
+					, $h3 = document.createElement('h3')
+					, $results = document.querySelector('#settingCollectionResults');
+				$table.id = `${path.env}SettingCollectionResults`
+				$h3.innerText = path.env.toUpperCase();
+				$results.appendChild($h3);
+				$results.appendChild($table);
+				window.restfull.post(
+					{ path: `http://localhost:${path.port}/query`, data: query, headers: { secret: localStorage.reporterSecret } }
+					, function(err, resp) {
+						if(err) $table.innerHTML = `<tr><td>${err}</td></tr>`;
+						var parsedSettings = JSON.parse(productionSettings)
+							, setting = settingNames.reduce((s, n) => {
+									var parsedSetting = parsedSettings.find(s => s.name === n);
+									s[n] = parsedSetting 
+											? settingPaths.reduce((j, p) => {
+												j[p] = get(parsedSetting, p);
+												return j;
+											}, {})
+											: {}
+									return s;
+								}, {})
+							, headerRow = `<thead><tr><th>Setting</th><th>${settingNames.join('</th><th>')}</th></tr></thead>`
+							, rows = '';
+						;
+
+						settingPaths.forEach(path => {
+							var cells = settingNames.map(name => setting[name][path])
+							rows += `<tr><td>${path}</td><td>${cells.join('</td><td>')}</td></tr>`
+						})
+						$table.innerHTML = headerRow + '<tbody>' + rows + '</tbody>';
+					}
+				); 				
+			})
+
 		</script>
+	</section>
+
+	<section>
+		<h2>Staging -> Simulator Test Results</h2>
+		<pre>
+completed FIFS app. loanAppId: 5a65f892e38f6e0004c9dd07
+completed HBAN app. loanAppId: 5a65f892e38f6e0004c9dd03
+completed FMCC app. loanAppId: 5a65f892e38f6e0004c9dd13
+completed SETFUSED app. loanAppId: 5a65f892e38f6e0004c9dd0a
+completed SETFNEW app. loanAppId: 5a65f892e38f6e0004c9dcfa
+      ✓ should not error when going through the FMCC app end to end
+      ✓ should not error when going through the FIFS app end to end
+      ✓ should not error when going through the HBAN app end to end
+      ✓ should not error when going through the SETFNEW app end to end
+      ✓ should not error when going through the SETFUSED app end to end
+https://idws-sample.syndication.kbb.com/3.0/vehicleinformationservice2008r2.svc/Soap11 https://idws-sample.syndication.kbb.com/3.0/vehicleinformationservice2008r2.svc/Soap11
+      ✓ should use env default trade-in (74ms)
+      ✓ should use sim bookout: nada (69ms)
+      ✓ should use sim bookout: blackbook (49ms)
+      - should use sim vertex taxes
+      - should use sim usps address look up for taxes
+      - should use sim rebates: FORD
+      ✓ should use sim rebates: SETF (45ms)
+      ✓ should use sim route one endpoint (50ms)
+      ✓ should use sim dealer track endpoint (48ms)
+      ✓ should use sim DMS (47ms)
+      ✓ should use sim products (50ms)
+      ✓ should use sim lender response
+      ✓ should use crm-staging CRM
+      ✓ should use crm staging only dealer notifications
+      ✓ should use sim customer notifications
+      ✓ should set dealer portal tracking label as fake (51ms)
+      ✓ should use amp-staging amplitude
+		</pre>
+	</section>
+	<section>
+		<h2>Staging -> Dealer Test Results</h2>
+		<pre>
+    In DEALERTEST mode
+completed FIFS app. loanAppId: 5a660e7fe38f6e0004c9e2ef
+completed HBAN app. loanAppId: 5a660e7fe38f6e0004c9e2fa
+completed FMCC app. loanAppId: 5a660e7fe38f6e0004c9e308
+completed SETFUSED app. loanAppId: 5a660e7fe38f6e0004c9e2f2
+completed SETFNEW app. loanAppId: 5a660e7fe38f6e0004c9e2fe
+      ✓ should not error when going through the FMCC app end to end
+      ✓ should not error when going through the FIFS app end to end
+      ✓ should not error when going through the HBAN app end to end
+      ✓ should not error when going through the SETFNEW app end to end
+      ✓ should not error when going through the SETFUSED app end to end
+https://idws-sample.syndication.kbb.com/3.0/vehicleinformationservice2008r2.svc/Soap11 https://idws-sample.syndication.kbb.com/3.0/vehicleinformationservice2008r2.svc/Soap11
+      ✓ should use env default trade-in
+http://webservice.nada.com/vehicles/vehicle.asmx http://webservice.nada.com/vehicles/vehicle.asmx
+http://webservice.nada.com/vehicles/vehicle.asmx http://webservice.nada.com/vehicles/vehicle.asmx
+      ✓ should use env default bookout: nada
+http://autofi-sim.herokuapp.com/blackbook/UsedVehicle/VIN/1FTEW1EP6HFC19232?mileage=20&customerid=581783787ca49b0300f35a82&state=OH http://autofi-sim.herokuapp.com/blackbook
+      ✓ should use env default bookout: blackbook
+      - should use env default vertex taxes
+      - should use env default usps address look up for taxes
+      - should use env default rebates: FORD
+https://api.set.alloy.services/v1/offers?language=en&series=COROLLA https://api.set.alloy.services/v1/offers
+      ✓ should use env default rebates: SETF
+      ✓ should use sim route one endpoint
+      ✓ should use sim dealer track endpoint
+      ✓ should use sim DMS
+https://fandiexpress.com/webapp/dspapi_versions/5.3/dspapi/EX1Rate/apixml?username=autofi1&password=a1Khj$b! https://fandiexpress.com/webapp/dspapi_versions/5.3/dspapi
+https://fandiexpress.com/webapp/dspapi_versions/5.3/dspapi/EX1Rate/apixml?username=autofi1&password=a1Khj$b! https://fandiexpress.com/webapp/dspapi_versions/5.3/dspapi
+https://fandiexpress.com/webapp/dspapi_versions/5.3/dspapi/EX1Rate/apixml?username=autofi1&password=a1Khj$b! https://fandiexpress.com/webapp/dspapi_versions/5.3/dspapi
+https://fandiexpress.com/webapp/dspapi_versions/5.3/dspapi/EX1Rate/apixml?username=autofi1&password=a1Khj$b! https://fandiexpress.com/webapp/dspapi_versions/5.3/dspapi
+      ✓ should use env default products
+      ✓ should use sim lender response
+      - should use env default CRM
+      - should use env default dealer notifications
+      ✓ should use env default dealer portal tracking labels
+      ✓ should use env default customer notifications
+      ✓ should use amp-staging amplitude
+		</pre>
 	</section>
 </body>
 

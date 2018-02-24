@@ -24,39 +24,38 @@ var express = require('express')
 	, _ = require('lodash')
 ;
 
+console.log();
+
 var app = express()
-	, port = parseInt(process.env.PORT || '3272')
-	, dbUri = process.env.MONGO_DB || configs.dbUri
 	, dbs = {
 		local: {
 			uri: process.env.MONGO_DB_l || configs.dbUri_l
-			, mongoose: new mongoose.Mongoose()
+			, port: 3270
+			, encryption: encrypt('4uWhEm+%9#_wT6UM=ngC4@n+R6KF7P')
 		}
 		, staging: {
 			uri: process.env.MONGO_DB_s || configs.dbUri_s
-			, mongoose: new mongoose.Mongoose()
+			, port: 3271
+			, encryption: encrypt('HJ0Zxu))Jj%gJ_t7ys)0U&p5;./ib=')
 		}
 		, production: {
 			uri: process.env.MONGO_DB_f || configs.dbUri_f
-			, mongoose: new mongoose.Mongoose()
+			, port: 3272
+			, encryption: encrypt('4uWhEm+%9#_wT6UM=ngC4@n+R6KF7P')
 		}
 		, panda: {
 			uri: process.env.MONGO_DB_panda || configs.pandaDbUri
-			, mongoose: new mongoose.Mongoose()
+			, port: 3273
+			, encryption: encrypt('4uWhEm+%9#_wT6UM=ngC4@n+R6KF7P')
 		}
 	}
-	, encryption = encrypt('4uWhEm+%9#_wT6UM=ngC4@n+R6KF7P')
+	, env = dbs[process.argv[2] || 'production']
+	
 ;
 
 if (mongoose.connection.readyState !== 1) {
-	mongoose.connect(dbUri, {useMongoClient: true});
+	mongoose.connect(env.uri, {useMongoClient: true});
 }
-
-// if (pandaMongoose.connection.readyState !== 1) {
-// 	pandaMongoose.connect(pandaDbUri, {useMongoClient: true});
-// }
-
-//var pandaModels = new PandaModels(pandaMongoose);
 
 function convertDates(obj) {
 	if(!obj) return;
@@ -89,14 +88,14 @@ function decrypt(obj, keys) {
 	keys.forEach(key => {
 		var val = _.get(obj, key);
 		if(!val) return;
-		_.set(obj, key, encryption.decrypt(val))
+		_.set(obj, key, env.encryption.decrypt(val))
 	});
 }
 
 
 app.use(bodyParser.json({limit: '16mb'}));
 
-app.set('port', port);
+app.set('port', env.port);
 
 app.get('/', (req, res, next) => {
 	res.send('OK');
@@ -135,10 +134,8 @@ app.post('/query', cors(), (req, res, next) => {
 	var results = []
 		, request = req.body
 		, keysToDecrypt = request.decrypt ? Object.assign({}, request.decrypt) : []
-		, environment = request.environment
 	;
 	delete request.decrypt;
-	delete request.environment;
 
 	convertDates(request);
 	async.eachSeries(Object.keys(request), function(key, cb) {
@@ -153,12 +150,12 @@ app.post('/query', cors(), (req, res, next) => {
 		;
 
 		Object.keys(actions).forEach(action => {
-			console.log(action)
+			console.log('Action', action)
 			if(action === 'exec' || !cmd[action]) return;
 			cmd = cmd[action](actions[action]);
 		})
 		cmd.exec(function(err, resp) {
-			console.log('ERROR'. err)
+			if(err) console.log('error', err)
 			if(resp && keysToDecrypt && keysToDecrypt.keys && keysToDecrypt.keys.length) decrypt(resp, keysToDecrypt.keys);
 			results.push(err || resp);
 			cb(err, resp);
@@ -180,5 +177,5 @@ server.on('listening', () => {
 	console.log('Listening on ' + bind);	
 });
 
-server.listen(port);
+server.listen(env.port);
 

@@ -43,6 +43,8 @@
 			<input type='text' id='start'/>
 			<label>End Date:</label>
 			<input type='text' id='end'/>
+			<label>Period Bin:</label>
+			<input type='text' id='pbin'/>
 			<button id='run'>Run</button>
 		</div>
 	</div>
@@ -65,7 +67,9 @@
 		<div id='invalidDataReasonsPlot'></div>
 	</div>
 	<script type="text/javascript">
-		var DEFAULT_DATE_RANGE = 21;
+		var DEFAULT_DATE_RANGE = 21
+			, PERIOD_BIN = 7
+		;
 		
 		function setDateRange() {
 			var	endDate = new Date(),
@@ -75,6 +79,7 @@
 			endDate.setDate(endDate.getDate() + 1);	
 			document.querySelector('#start').value = startDate.toLocaleDateString();
 			document.querySelector('#end').value = endDate.toLocaleDateString();		
+			document.querySelector('#pbin').value = PERIOD_BIN;
 		}
 
 		function round(n, decimalPlaces) {
@@ -118,7 +123,7 @@
 
 		function createTimePareto(title, data, periodBin) {
 			var minDate = new Date()*1
-				, maxDate = new Date()
+				, maxDate = new Date(0)
 				dates = Object.keys(data).reduce((o,k) => {
 					data[k].forEach(r => {
 						var d = new Date(r.dateCreated.toLocaleDateString())*1;
@@ -135,22 +140,25 @@
 			var ct = 0
 				,  d = new Date(minDate)
 			;
+
 			while(d*1 <= maxDate) {
 				dateBins.push(d);
 				d = new Date(minDate);
 				ct += periodBin;
 				d.setDate(d.getDate() + ct);
 			}
+
 			var x = dateBins.map(d => new Date(d).toLocaleDateString());
 			
 			var $plots = document.querySelector('#plots')
 				, $div = document.createElement('div')
+				, id = title.replace(/[^0-9a-zA-z-_]/g, '-')
+				, $oldDiv = document.querySelector('#' + id)
 				, binnedParetoData = Object.keys(data).reduce((o, k) => {
 						var d = data[k];
 						o[k] = {
 							x: x
 							, y: x.map((date,i) => {
-									console.log(date, i)
 									return d.filter(r => {
 										return i < x.length 
 											? (r.dateCreated >= new Date(date) && r.dateCreated < new Date(x[i+1]))
@@ -165,7 +173,8 @@
 				, plotData = Object.keys(binnedParetoData).map(k => binnedParetoData[k])
 			;
 
-			$div.id = title.replace(/[^0-9a-zA-z-_]/g, '-')
+			if($oldDiv) $oldDiv.parentNode.removeChild($oldDiv);
+			$div.id = id;
 			$div.innerHTML = `<h2>${title}</h2><div class='plot' id='${$div.id}-plot'></div>`
 			$plots.appendChild($div);
 			Plotly.newPlot(`${$div.id}-plot`, plotData, {barmode: 'stack'});
@@ -176,6 +185,7 @@
 				return log(err);
 			}
 			resp = JSON.parse(resp);
+			periodBin = parseInt(document.querySelector('#pbin').value);
 			
 			var aggResponses = [resp[0], resp[1]]
 				, dealerResponse = resp[2].reduce((o, d) => {
@@ -405,12 +415,13 @@
 				if(s === 'SUCCESS') return;
 				submitErrors[s] = statuses[s];
 			})
-			createTimePareto('Pareto of App Submit Statuses', submits, 30)
-			createTimePareto('Pareto of App Submit Errors', submitErrors, 30)
+			createTimePareto('Pareto of App Submit Statuses', submits, periodBin)
+			console.log('SUBMIT', submits);
+			createTimePareto('Pareto of App Submit Errors', submitErrors, periodBin)
 			console.log('SUBMIT ERRORS', submitErrors);
 
 			console.log('DECISIONS', decisions);
-			createTimePareto('Pareto of Decisions', decisions, 30);
+			createTimePareto('Pareto of Decisions', decisions, periodBin);
 
 			decisionsPareto.sort((a,b) => a.y < b.y ? 1 : -1)
 			var decisionData = [
@@ -512,7 +523,7 @@
 								'status.pricing': { $nin: ['NOTSUBMITTED', 'NONE', 'NOT SUBMITTED'] },
 								dateCreated: { $gte: startDate.toISOString(), $lte: endDate.toISOString() },
 								'applicant.email': { $nin: ['prodtest-1@autofi.io','prodtest-1@autofi.com'] },
-								backendPath: { $nin: ['SIMULATOR', 'LENDERTEST'] },
+								backendPath: { $nin: ['SIMULATOR', 'LENDERTEST', 'DEALERTEST'] },
 								'applicant.isTestUser': { $not: { $eq: true } },
 								'trackingLabel.isTest': { $not: { $eq: true } },
 								'trackingLabel.isDuplicate': { $not: { $eq: true } },
@@ -578,7 +589,7 @@
 								dateCreated: { $gte: startDate.toISOString(), $lte: endDate.toISOString() },
 								'vehicle.status': 'INVALIDVEHICLE',
 								'applicant.email': { $nin: ['prodtest-1@autofi.io','prodtest-1@autofi.com'] },
-								backendPath: { $nin: ['SIMULATOR', 'LENDERTEST'] },
+								backendPath: { $nin: ['SIMULATOR', 'LENDERTEST', 'DEALERTEST'] },
 								'applicant.isTestUser': { $not: { $eq: true } },
 								'trackingLabel.isTest': { $not: { $eq: true } },
 								'trackingLabel.isDuplicate': { $not: { $eq: true } },
