@@ -34,7 +34,7 @@
 		1. Error Reasons (Date Pareto)
 		2. Smart Cow Server Health
 		3. Velocity
-		4. 
+		4.
 	-->
 	<div>
 		<h2>Choose the date range</h2>
@@ -68,17 +68,17 @@
 	</div>
 	<script type="text/javascript">
 		var DEFAULT_DATE_RANGE = 21
-			, PERIOD_BIN = 7
+			, PERIOD_BIN = 1
 		;
-		
+
 		function setDateRange() {
 			var	endDate = new Date(),
 				startDate = new Date()
 			;
-			startDate.setDate(startDate.getDate() - DEFAULT_DATE_RANGE);	
-			endDate.setDate(endDate.getDate() + 1);	
+			startDate.setDate(startDate.getDate() - DEFAULT_DATE_RANGE);
+			endDate.setDate(endDate.getDate() + 1);
 			document.querySelector('#start').value = startDate.toLocaleDateString();
-			document.querySelector('#end').value = endDate.toLocaleDateString();		
+			document.querySelector('#end').value = endDate.toLocaleDateString();
 			document.querySelector('#pbin').value = PERIOD_BIN;
 		}
 
@@ -149,7 +149,7 @@
 			}
 
 			var x = dateBins.map(d => new Date(d).toLocaleDateString());
-			
+
 			var $plots = document.querySelector('#plots')
 				, $div = document.createElement('div')
 				, id = title.replace(/[^0-9a-zA-z-_]/g, '-')
@@ -160,10 +160,10 @@
 							x: x
 							, y: x.map((date,i) => {
 									return d.filter(r => {
-										return i < x.length 
+										return i < x.length
 											? (r.dateCreated >= new Date(date) && r.dateCreated < new Date(x[i+1]))
 											: r.dateCreated >= new Date(date)
-										
+
 									}).length;
 								})
 							, name: k
@@ -186,7 +186,7 @@
 			}
 			resp = JSON.parse(resp);
 			periodBin = parseInt(document.querySelector('#pbin').value);
-			
+
 			var aggResponses = [resp[0], resp[1]]
 				, dealerResponse = resp[2].reduce((o, d) => {
 					o[d._id] = d.name;
@@ -208,10 +208,10 @@
 									if (/^[a-z]{4}Status$/.test(k)) {
 										var lender = k.match(/^([a-z]{4})Status$/)[1],
 											isNoResponse = r[k] === 'NO RESPONSE';
-										n.lender = lender;
+										n.lender = r[k] !== 'NONE' ? lender : n.lender;
 										n.isNoResponse = isNoResponse;
 									}
-									if(k === 'dateCreated') {
+									if(['dateCreated', 'dateCompleted'].includes(k)) {
 										return n[k] = new Date(r[k]);
 									}
 									n[k] = r[k];
@@ -268,6 +268,7 @@
 				, decisionsPareto = Object.keys(decisions).map(d => {return {x: d, y: decisions[d].length}})
 				, unknowns = []
 				, reasonsByLoanAppId = {}
+				, averageDecisionTimes = {}
 				, reasons= decisions.DECLINED
 					.reduce((o, s) => {
 						var xml = s.middleManDecision
@@ -280,10 +281,10 @@
 								.filter(x => x.indexOf('</B:DecisionComments>') > -1)
 								.map(x => x.split('</B:DecisionComments>')[0].trim())
 								.map(x => {
-									return x.startsWith('LTV ') ? 'LTV' : x 
+									return x.startsWith('LTV ') ? 'LTV' : x
 								})
 						}
-						
+
 						if(!reasons.length) {
 							reasons = ['UNKNOWN']
 							unknowns.push(xml);
@@ -330,9 +331,14 @@
 								, isDeclined = l.decision === 'DECLINED'
 								, lender = l.lender || 'n/a'
 								, dealer = l.dealer ? dealerResponse[l.dealer] : 'n/a'
+								, dateCreated = l.dateCreated
+								, dateCompleted = l.dateCompleted
+								, decisionTime = (new Date(l.dateCompleted) - new Date(l.dateCreated))/1000
 							;
+							averageDecisionTimes[lender] = averageDecisionTimes[lender] || [];
+							if(!isNaN(decisionTime)) averageDecisionTimes[lender].push(decisionTime);
 							return {
-								reasons: isSuccess 
+								reasons: isSuccess
 									? (isDeclined ? reasonsByLoanAppId[l.loanAppId] : ['n/a'])
 									: [`ERROR_${status}`]
 								, decision: isSuccess ? l.decision : 'n/a'
@@ -342,6 +348,9 @@
 								, income: income
 								, bookValue: bookValue
 								, amountFinanced: amountFinanced
+								, dateCreated: dateCreated
+								, dateCompleted: dateCompleted
+								, decisionTime: decisionTime
 								, pti: pti
 								, ltv: ltv
 								, loanAppId: l.loanAppId
@@ -349,28 +358,34 @@
 						}));
 						return arr;
 					}, []).reduce((a, o) => {
-						a = a.concat(o.reasons.map(r => {
-							var reason = r.replace(/,/g, '-').replace(/\n/g, '->');
-							return {
+						//a = a.concat(o.reasons.map(r => {
+							//var reason = r.replace(/,/g, '-').replace(/\n/g, '->');
+							//return {
+							var reason = o.reasons.map(r => r.replace(/,/g, '-').replace(/\n/g, '->')).join('. ')
+							var firstReason = o.reasons[0].replace(/,/g, '-').replace(/\n/g, '->')
+							a.push({
 								loanAppId: o.loanAppId
 								, decision: o.decision
 								, status: o.status
 								, reason: reason
-								, bin: reason === 'n/a' 
-									? 'Decisioned' 
-									: (binnedReasonsMapping[reason] || 'Other') 
+								, bin: firstReason === 'n/a'
+									? 'Decisioned'
+									: (binnedReasonsMapping[firstReason] || 'Other')
 								, dealer: o.dealer
 								, lender: o.lender
 								, income: o.income
 								, bookValue: o.bookValue
 								, amountFinanced: o.amountFinanced
+								, dateCreated: o.dateCreated
+								, dateCompleted: o.dateCompleted
+								, decisionTime: o.decisionTime
 								, pti: o.pti
 								, ltv: o.ltv
-							}
-						}));
-						return a;								
+							});
+						//}));
+						return a;
 					}, [])
-				, header = ['Loan App Id', 'Decision', 'Status', 'Reason', 'Bin', 'Dealer', 'Lender', 'Income', 'Book Value', 'Amound Financed', 'PTI', 'LTV'].join(',')
+				, header = ['Loan App Id', 'Decision', 'Status', 'Reason', 'Bin', 'Dealer', 'Lender', 'Income', 'Book Value', 'Amound Financed', 'Date Created', 'Date Completed', 'Decision Time', 'PTI', 'LTV'].join(',')
 				, dataDumpCSV = header + '\n' + dataDump.reduce((a, o) => {
 						a.push([
 							o.loanAppId
@@ -383,6 +398,9 @@
 							, o.income
 							, o.bookValue
 							, o.amountFinanced
+							, o.dateCreated
+							, o.dateCompleted
+							, o.decisionTime
 							, o.pti
 							, o.ltv
 						].join(','));
@@ -394,10 +412,10 @@
 					return o;
 				}, {})
 				, binnedReasonsPareto = Object.keys(binnedReasons).map(r => {return {x: r, y: binnedReasons[r]}})
-				, invalidDataReasons = statuses['INVALID_DATA'].reduce((o, d) => {
+				, invalidDataReasons = (statuses['INVALID_DATA'] || []).reduce((o, d) => {
 					var k;
 					try {
-						k = JSON.parse(d.pricingMessage).detail.faultdetails 
+						k = JSON.parse(d.pricingMessage).detail.faultdetails
 					} catch(ex) {
 						k = d.pricingMessage;
 					}
@@ -406,7 +424,7 @@
 					return o;
 				}, {})
 				, invalidDataReasonsPareto = Object.keys(invalidDataReasons).map(r => {return {x: r, y: invalidDataReasons[r]}})
-			; 
+			;
 
 			window.joinedData = joinedData;
 			var submits = {'SUBMITS': []}, submitErrors = {};
@@ -417,11 +435,20 @@
 			})
 			createTimePareto('Pareto of App Submit Statuses', submits, periodBin)
 			console.log('SUBMIT', submits);
+
 			createTimePareto('Pareto of App Submit Errors', submitErrors, periodBin)
 			console.log('SUBMIT ERRORS', submitErrors);
 
 			console.log('DECISIONS', decisions);
 			createTimePareto('Pareto of Decisions', decisions, periodBin);
+
+			console.log('DECISION TIMES', Object.keys(averageDecisionTimes).reduce((o, lender) => {
+				o[lender] = averageDecisionTimes[lender].reduce((s, i) => {
+					s += i;
+					return s;
+				}, 0)/averageDecisionTimes[lender].length;
+				return o;
+			}, {}));
 
 			decisionsPareto.sort((a,b) => a.y < b.y ? 1 : -1)
 			var decisionData = [
@@ -485,7 +512,7 @@
 			document.querySelector('#invalidDataReasons').style.display = 'block';
 			Plotly.newPlot('invalidDataReasonsPlot', invalidData);
 
-			
+
 			console.log('DATA DUMP', dataDump);
 			window.csv = dataDumpCSV;
 		};
@@ -515,7 +542,7 @@
 				, startDate = new Date(document.querySelector('#start').value)
 			;
 
-			var path = 'http://localhost:3272/query' // 'http://bogoin.herokuapp.com/query'; 
+			var path = 'http://localhost:3272/query' // 'http://bogoin.herokuapp.com/query';
 				, decisioningQuery = {
 					loanApplications: {
 						aggregate: [{
@@ -570,7 +597,8 @@
 								decisionError: '$error',
 								decisionStatus: '$status',
 								decisionMessage: '$message',
-								dateCreated: '$startDate'
+								dateCreated: '$startDate',
+								dateCompleted: '$endDate'
 							}
 						}],
 						lean: null
@@ -626,7 +654,7 @@
 						, renderInvalidVehicleData
 					);
 				}
-			); 
+			);
 		}
 
 		setDateRange();

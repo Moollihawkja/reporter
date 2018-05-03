@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Decisioning Analysis</title>
+		<style>
+			* {
+				font-family: Arial;
+			}
+
+			body {
+				background-color: #232323;
+				color: #EFEFEF;
+			}
+
+			label, input, button {
+				display:block;
+				margin:0.5em;
+			}
+
+			button {
+				font-size:1.15em;
+			}
+
+			select {
+				font-size:1.15em;
+				height:2em;
+				width:8em;
+			}
+
+			option {
+				font-size:1.15em;
+			}
+
+			input {
+				width:80vw;
+				font-size:1.15em;
+			}
+
+		</style>
+		<script src="http://autofi-testing.herokuapp.com/libs/restfull.js"></script>
+	</head>
+
+	<body>
+		<h1>Simple Queries</h1>
+		<h2>Environment:</h2>
+		<select id='environment'>
+			<option value='3270'>Local</option>
+			<option value='3271'>Test</option>
+			<option value='3272'>Production</option>
+		</select>
+		<script>
+			window.envPort = document.querySelector('#environment').value || '3270';
+			document.querySelector('#environment').addEventListener('change', function(e) {
+				window.envPort = this.value;
+			})
+		</script>
+		<section id='decision'>
+			<h2>Parse Decision</h2>
+			<input type='text' placeholder="Loan App Ids" value="5ad63e38c89ad5000464ce02, 5ad63fcbc89ad5000464cebf, 5ad648c0c89ad5000464d094">
+			<button>Search</button>
+			<div></div>
+			<script>
+				let id = 'decision';
+				document.querySelector(`#${id} button`).addEventListener('click', function() {
+					var apps = document.querySelector(`#${id} input`).value.trim().split(',').map(s => s.trim());
+					if(!apps || !apps.length) return;
+					window.restfull.post({
+						path: `http://localhost:${window.envPort}/query`
+						, data: {
+							loanApplications: {
+								find: {_id: {$in: apps}}
+								, select: 'riskData.routeOne'
+								, lean: null
+							}
+							, decrypt: {
+								keys: ['riskData.routeOne[].decision']
+							}
+						}
+						, headers: {
+							secret: localStorage.reporterSecret
+						}
+					}, function(err, resp) {
+						var data = JSON.parse(resp)[0];
+						data = data.reduce((a, d) => {
+							d.riskData.routeOne.reduce((b,r) => {
+								if(r.status === 'R') return b;
+								b.push({
+									loanAppId: d._id,
+									conversationId: r.conversationId,
+									receivedAt: new Date(r.receivedAt),
+									status: r.status,
+									decision: r.decision
+								})
+								return b;
+							}, a);
+							return a;
+						}, []);
+
+						var html = data.map(d => {
+							return `<dl>
+								<dt>Loan App Id</dt>
+								<dd>${d.loanAppId}</dd>
+								<dt>Conversation Id</dt>
+								<dd>${d.conversationId}</dd>
+								<dt>Received At</dt>
+								<dd>${d.receivedAt}</dd>
+								<dt>Status</dt>
+								<dd>${d.status}</dd>
+								<dt>Decision</dt>
+								<dd><xmp>${d.decision}</xmp></dd>
+							</dl>`
+						}).join('\n')
+
+						document.querySelector(`#${id} div`).innerHTML = html; //JSON.stringify(data, null, '\t');
+					});
+				});
+			</script>
+		</section>
+	</body>
+</html>

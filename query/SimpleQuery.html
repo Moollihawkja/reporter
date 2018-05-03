@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>Decisioning Analysis</title>
+	<style>
+		* {
+			font-family: Arial;
+		}
+
+		body {
+			background-color: #232323;
+			color: #EFEFEF;
+		}
+
+		label, input, button {
+			display:block;
+			margin:0.5em;
+		}
+
+		button {
+			font-size:1.15em;
+		}
+
+		select {
+			font-size:1.15em;
+			height:2em;
+			width:8em;
+		}
+
+	</style>
+	<script src="http://autofi-testing.herokuapp.com/libs/restfull.js"></script>
+</head>
+
+<body>
+	<h1>Simple Queries</h1>
+	<h2>Environment:</h2>
+	<select id='environment'>
+		<option value='3270'>Local</option>
+		<option value='3271'>Test</option>
+		<option value='3272'>Production</option>
+	</select>
+	<script>
+		window.envPort = '3270';
+		document.querySelector('#environment').addEventListener('change', function(e) {
+			window.envPort = this.value;
+		})
+	</script>
+	<section id='ficoReasons'>
+		<h2>Fico Reasons</h2>
+		<input type='text' placeholder='Loan App Ids'>
+		<button>Search</button>
+		<pre></pre>
+		<script>
+			document.querySelector('#ficoReasons button').addEventListener('click', function() {
+			window.restfull.post(
+				{ path: `http://localhost:${window.envPort}/query`
+					, data: {
+						loanApplications: {
+							find: {_id: {$in: document.querySelector('#ficoReasons input').value.split(',').map(v => v.trim())}}
+							, select: 'applicant.ficoReasons'
+							, lean: null
+						}
+						, decrypt: { keys: ['applicant.ficoReasons'] }
+					}
+					, headers: { secret: localStorage.reporterSecret }
+				}
+				, function(err, resp) {
+					document.querySelector('#ficoReasons pre').innerHTML = JSON.stringify(JSON.parse(resp), null, '\t');
+				}
+			);
+			})
+		</script>
+	</section>
+	<section id='ficoScores'>
+		<h2>Fico Scores</h2>
+		<button>Search</button>
+		<pre></pre>
+		<script>
+			document.querySelector('#ficoScores button').addEventListener('click', function() {
+			window.restfull.post(
+				{ path: `http://localhost:${window.envPort}/query`
+					, data: {
+						loanApplications: {
+							find: {
+								'applicant.fico' : {$ne: null},
+								dateCreated: { $gte: new Date('01/01/2018').toISOString(), $lte: new Date().toISOString() },
+								backendPath: { $in: ['PROD', undefined] },
+								'applicant.isTestUser': { $ne: true },
+								'trackingLabel.isTest': { $ne: true },
+								'trackingLabel.isDuplicate': { $ne: true },
+								'trackingLabel.isFake': { $ne: true }
+							}
+							, select: 'applicant.fico  applicant.email'
+							, lean: null
+						}
+						, decrypt: { keys: ['applicant.fico'] }
+					}
+					, headers: { secret: localStorage.reporterSecret }
+				}
+				, function(err, resp) {
+					var res = JSON.parse(resp)[0].filter(r => {
+						return r.applicant.email.toLowerCase().indexOf('@autofi.') === -1
+							&& r.applicant.fico;
+					}).map(r => r.applicant.fico);
+					document.querySelector('#ficoScores pre').innerHTML = JSON.stringify(res, null, '\t');
+				}
+			);
+			})
+		</script>
+	</section>
+	<section id='conversationIds'>
+		<h2>Conversation Ids</h2>
+		<input type='text' placeholder='Loan App Ids'>
+		<button>Search</button>
+		<pre></pre>
+		<script>
+			document.querySelector('#conversationIds button').addEventListener('click', function() {
+			window.restfull.post(
+				{ path: `http://localhost:${window.envPort}/query`
+					, data: {
+						loanApplications: {
+							find: {_id: {$in: JSON.parse(document.querySelector('#conversationIds input').value.split('\n').join(''))}}
+							, select: 'integrations.routeOne status.appState'
+							, lean: null
+						}
+					}
+					, headers: { secret: localStorage.reporterSecret }
+				}
+				, function(err, resp) {
+					var ans = JSON.parse(resp)[0].map(r => {
+						return {
+							loanAppId: r._id
+							, conversationId: r.integrations.routeOne[0].conversationId
+							, dateSubmitted: r.integrations.routeOne[0].lastCompleted
+						}
+					})
+					document.querySelector('#conversationIds pre').innerHTML = JSON.stringify(ans, null, '\t');
+				}
+			);
+			})
+		</script>
+	</section>
+	<section id='dealerId'>
+		<h2>Dealer Ids</h2>
+		<input type='text' placeholder='Dealer Ids'>
+		<button>Search</button>
+		<pre></pre>
+		<script>
+			document.querySelector('#dealerId button').addEventListener('click', function() {
+			window.restfull.post(
+				{ path: `http://localhost:${window.envPort}/query`
+					, data: {
+						dealers: {
+							find: {_id: {$in: JSON.parse(document.querySelector('#dealerId input').value.split('\n').join(''))}}
+							, select: 'name settings.routeOne.submitType'
+							, lean: null
+						}
+					}
+					, headers: { secret: localStorage.reporterSecret }
+				}
+				, function(err, resp) {
+					var ans = JSON.parse(resp)[0].map(r => {
+						return {
+							dealerId: r._id
+							, name: r.name
+							, hasOrs: r.settings.routeOne.submitType === 'ORS'
+						}
+					})
+					document.querySelector('#dealerId pre').innerHTML = JSON.stringify(ans, null, '\t');
+				}
+			);
+			})
+		</script>
+	</section>
+	<section id='decision'>
+		  <h2>Parse Decision</h2>
+      <input type='text' placeholder="Loan App Id">
+      <button>Search</button>
+      <pre></pre>
+      <script>
+        document.querySelector('#decision button').addEventListener('click', function() {
+			window.restfull.post(
+  					{ path: `http://localhost:${window.envPort}/query`, data: {
+    					decisions: {
+    						find: {loanApp: document.querySelector('#decision input').value}
+    						, lean: null
+    					}
+              , decrypt: { keys: ['request', 'response'] }
+    				}, headers: { secret: localStorage.reporterSecret } }
+  					, function(err, resp) {
+  						document.querySelector('#decision pre').innerHTML = JSON.stringify(JSON.parse(resp), null, '\t');
+  					}
+  				);
+        })
+      </script>
+	</section>
+	<section id='logquery'>
+		  <h2>Find Outbound Logs from Smart Cow</h2>
+      <input type='text' placeholder="Loan App Id">
+      <button>Search</button>
+      <pre></pre>
+      <script>
+        document.querySelector('#logquery button').addEventListener('click', function() {
+          window.restfull.post(
+  					{ path: `http://localhost:${window.envPort}/query`, data: {
+    					logEntry: {
+    						find:{name: 'smartcow', direction: 'outbound', loanAppId: document.querySelector('#logquery input').value}
+    						, lean: null
+    					}
+    				}, headers: { secret: localStorage.reporterSecret } }
+  					, function(err, resp) {
+  						document.querySelector('#logquery pre').innerHTML = JSON.stringify(JSON.parse(resp), null, '\t');
+  					}
+  				);
+        })
+      </script>
+	</section>
+	<section id='logs'>
+		  <h2>Aggregate Logs</h2>
+      <button>Search</button>
+      <pre></pre>
+      <script>
+        document.querySelector('#logs button').addEventListener('click', function() {
+          window.restfull.post(
+  					{ path: `http://localhost:${window.envPort}/query`, data: {
+    					logEntry: {
+    						aggregate: [
+									{
+										$match: {direction: 'outbound', name: 'smartcow', path: '/financedriver/v1.2/lead/create'}
+										// , $group: {
+										// 	_id: {loanAppId: '$loanAppId'}
+										// }
+									}
+								]
+    						, lean: null
+    					}
+    				}, headers: { secret: localStorage.reporterSecret } }
+  					, function(err, resp) {
+  						document.querySelector('#logs pre').innerHTML = JSON.stringify(JSON.parse(resp), null, '\t');
+  					}
+  				);
+        })
+      </script>
+</body>
+
+</html>

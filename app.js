@@ -5,7 +5,7 @@ TODOS:
 ❌ TEST on 상태.com to see if cors is really working
 ✅ Update Nether.Space to:
 	✅ send a key from local storage inside the header
-	- 
+	-
 ✅ Add logic to block requests using the wrong keys (Make sure we put a timer on this)
 - Add cors to the route, and only allow from nether space for now
 - Structure the response in a way that plot.ly likes
@@ -50,7 +50,7 @@ var app = express()
 		}
 	}
 	, env = dbs[process.argv[2] || 'production']
-	
+
 ;
 
 if (mongoose.connection.readyState !== 1) {
@@ -71,7 +71,7 @@ function convertDates(obj) {
 			if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(obj[k])) {
 				obj[k] = new Date(obj[k])
 			}
-		} 
+		}
 		if(typeof(obj[k]) === 'object') {
 			convertDates(obj[k])
 		}
@@ -86,6 +86,16 @@ function decrypt(obj, keys) {
 	}
 	if(typeof(obj) !== 'object') return;
 	keys.forEach(key => {
+		if(key.includes('[]')) {
+			var keyParts = key.split('[].');
+			var val = _.get(obj, keyParts[0]);
+			val.forEach(v => {
+				var subval = _.get(v,keyParts[1]);
+				_.set(v, keyParts[1], env.encryption.decrypt(subval).trim())
+			});
+			_.set(obj, keyParts[0], val)
+			return;
+		}
 		var val = _.get(obj, key);
 		if(!val) return;
 		_.set(obj, key, env.encryption.decrypt(val))
@@ -125,6 +135,10 @@ app.use(function(req,res,next) {
 })
 
 
+app.get('/stats', cors(), (req, res, next) => {
+
+})
+
 app.options('/query', cors(), (req, res, next) => {
 	res.send();
 })
@@ -139,7 +153,7 @@ app.post('/query', cors(), (req, res, next) => {
 
 	convertDates(request);
 	async.eachSeries(Object.keys(request), function(key, cb) {
-		
+
 		var system = request[key].system
 			, models = system === 'panda' ? pandaModels : loanAppModels;
 		delete request[key].system;
@@ -163,7 +177,7 @@ app.post('/query', cors(), (req, res, next) => {
 	}, function(err) {
 		res.send(err || results);
 	})
-	
+
 })
 
 var server = http.createServer(app);
@@ -174,8 +188,7 @@ server.on('listening', () => {
 			? 'pipe ' + addr
 			: 'port ' + addr.port
 	;
-	console.log('Listening on ' + bind);	
+	console.log('Listening on ' + bind);
 });
 
 server.listen(env.port);
-
